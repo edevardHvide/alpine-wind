@@ -51,8 +51,10 @@ export function computeSnowAccumulation(
       const scourFactor = 1 - clamp(surfaceSpeed / SCOUR_THRESHOLD_MS, 0, 0.8);
 
       // Lee-side deposition: slope facing away from wind accumulates
+      // Only applies when there's meaningful wind to create lee/windward sides
       const aspectDiff = Math.cos(aspects[gi] - windRadTo);
-      const leeFactor = 1 + clamp(aspectDiff, 0, 1) * 0.8; // up to 1.8x on lee
+      const windInfluence = clamp(surfaceSpeed / 2, 0, 1); // ramps from 0-2 m/s
+      const leeFactor = 1 + clamp(aspectDiff, 0, 1) * 0.8 * windInfluence;
 
       // Slope shedding: steep slopes lose snow
       const slopeDeg = slopes[gi] * (180 / Math.PI);
