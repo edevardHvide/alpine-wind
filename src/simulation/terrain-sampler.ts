@@ -24,13 +24,15 @@ export async function sampleTerrain(
     }
   }
 
-  // Query terrain heights
-  const sampled = await sampleTerrainMostDetailed(terrainProvider, positions);
-
-  // Pack into typed array
+  // Query terrain heights in batches to avoid stack overflow with large grids
+  const BATCH_SIZE = 10000;
   const heights = new Float64Array(rows * cols);
-  for (let i = 0; i < sampled.length; i++) {
-    heights[i] = sampled[i].height;
+  for (let start = 0; start < positions.length; start += BATCH_SIZE) {
+    const batch = positions.slice(start, start + BATCH_SIZE);
+    const sampled = await sampleTerrainMostDetailed(terrainProvider, batch);
+    for (let i = 0; i < sampled.length; i++) {
+      heights[start + i] = sampled[i].height;
+    }
   }
 
   // Compute slope, aspect, normals from finite differences
@@ -44,10 +46,22 @@ export async function sampleTerrain(
 
   console.log(
     `Terrain sampled: ${rows}x${cols} grid, cell=${cellSizeMeters}m, ` +
-    `height range: ${Math.min(...heights).toFixed(0)}-${Math.max(...heights).toFixed(0)}m`,
+    `height range: ${typedArrayMin(heights).toFixed(0)}-${typedArrayMax(heights).toFixed(0)}m`,
   );
 
   return { heights, rows, cols, bbox, cellSizeMeters, slopes, aspects, normalsX, normalsY, normalsZ };
+}
+
+function typedArrayMin(arr: Float64Array): number {
+  let min = Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] < min) min = arr[i];
+  return min;
+}
+
+function typedArrayMax(arr: Float64Array): number {
+  let max = -Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] > max) max = arr[i];
+  return max;
 }
 
 function computeDerivatives(

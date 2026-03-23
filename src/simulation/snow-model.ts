@@ -112,7 +112,9 @@ export function computeSnowAccumulation(
     }
   }
 
-  console.log(`Snow model: ${snowfallCm}cm base, ${landCells} land cells, windStrength=${windStrength.toFixed(2)}, depth range: ${Math.min(...depth).toFixed(0)}-${Math.max(...depth).toFixed(0)}cm`);
+  let minD = Infinity, maxD = -Infinity;
+  for (let i = 0; i < depth.length; i++) { if (depth[i] < minD) minD = depth[i]; if (depth[i] > maxD) maxD = depth[i]; }
+  console.log(`Snow model: ${snowfallCm}cm base, ${landCells} land cells, windStrength=${windStrength.toFixed(2)}, depth range: ${minD.toFixed(0)}-${maxD.toFixed(0)}cm`);
 
   return { depth, isPowderZone, rows, cols };
 }
