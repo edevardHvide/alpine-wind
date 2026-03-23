@@ -49,18 +49,6 @@ export default function ControlPanel({
         />
       </label>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-xs text-gray-400">Temperature: {params.temperature}°C</span>
-        <input
-          type="range"
-          min="-20"
-          max="5"
-          value={params.temperature}
-          onChange={(e) => onParamsChange({ ...params, temperature: Number(e.target.value) })}
-          className="accent-orange-500"
-        />
-      </label>
-
       <button
         onClick={onSimulate}
         disabled={simulating}
