@@ -27,10 +27,14 @@ export function computeSnowAccumulation(
 
   // No wind = uniform snowfall, no redistribution
   if (params.speed < 0.5) {
+    const isPowder = params.temperature >= POWDER_TEMP_MIN && params.temperature <= POWDER_TEMP_MAX;
     for (let i = 0; i < rows * cols; i++) {
-      depth[i] = heights[i] >= 40 ? snowfallCm : 0;
+      if (heights[i] >= 40) {
+        depth[i] = snowfallCm;
+        if (isPowder) isPowderZone[i] = 1;
+      }
     }
-    console.log(`Snow model: ${snowfallCm}cm base, uniform (no wind)`);
+    console.log(`Snow model: ${snowfallCm}cm base, uniform (no wind), powder=${isPowder}`);
     return { depth, isPowderZone, rows, cols };
   }
 
