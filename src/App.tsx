@@ -3,6 +3,7 @@ import CesiumViewer from "./components/CesiumViewer.tsx";
 import ControlPanel from "./components/ControlPanel.tsx";
 import SnowLegend from "./components/SnowLegend.tsx";
 import SnowDepthTooltip from "./components/SnowDepthTooltip.tsx";
+import MapCompass from "./components/MapCompass.tsx";
 import TimelineBar from "./components/TimelineBar.tsx";
 import { REGIONS, regionFromCoordinates } from "./simulation/regions.ts";
 import type { MountainResult } from "./api/kartverket.ts";
@@ -40,6 +41,7 @@ export default function App() {
   // Snow depth probe (click in simulation mode)
   const [depthProbe, setDepthProbe] = useState<{ lat: number; lng: number; depthCm: number; screenX: number; screenY: number } | null>(null);
 
+  const [cesiumViewer, setCesiumViewer] = useState<Viewer | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const windLayerRef = useRef<WindCanvasLayer | null>(null);
   const prefetchRef = useRef<Promise<WeatherTimeSeries> | null>(null);
@@ -285,8 +287,11 @@ export default function App() {
         onTerrainReady={handleTerrainReady}
         onViewerReady={(v: Viewer) => {
           viewerRef.current = v;
+          setCesiumViewer(v);
         }}
       />
+
+      <MapCompass viewer={cesiumViewer} />
 
       <ControlPanel
         params={params}
