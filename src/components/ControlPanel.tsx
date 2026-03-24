@@ -42,7 +42,7 @@ export default function ControlPanel({
     <>
       {/* ===== Mobile: floating search bar + settings toggle ===== */}
       <div className="md:hidden absolute top-3 left-3 right-14 z-20 flex items-center gap-2">
-        <div className="flex-1 glass-panel flex items-center rounded-full overflow-hidden">
+        <div className="flex-1 glass-panel flex items-center rounded-full">
           {/* Search icon */}
           <div className="pl-3.5 pr-1 text-slate-400 shrink-0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

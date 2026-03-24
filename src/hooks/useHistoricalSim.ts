@@ -49,14 +49,20 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
   const [progress, setProgress] = useState<{ stage: string; percent: number } | null>(null);
 
   const listenerRef = useRef<((e: MessageEvent<WorkerResponse>) => void) | null>(null);
+  const silentRef = useRef(false);
 
   const run = useCallback(
-    (weather: WeatherTimeSeries) => {
+    (weather: WeatherTimeSeries, options?: { silent?: boolean }) => {
       const worker = workerRef.current;
       if (!worker) return;
 
-      setLoading(true);
-      setProgress({ stage: "Computing simulation...", percent: 0 });
+      const silent = options?.silent ?? false;
+      silentRef.current = silent;
+
+      if (!silent) {
+        setLoading(true);
+        setProgress({ stage: "Computing simulation...", percent: 0 });
+      }
 
       // Remove any previous listener
       if (listenerRef.current) {
@@ -65,9 +71,11 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
 
       const handler = (e: MessageEvent<WorkerResponse>) => {
         const msg = e.data;
-        // Only handle historical message types
         if (msg.type === "historical-progress") {
-          setProgress({ stage: msg.stage, percent: msg.percent });
+          // Only update UI if not silent
+          if (!silentRef.current) {
+            setProgress({ stage: msg.stage, percent: msg.percent });
+          }
         } else if (msg.type === "historical-result") {
           const converted = msg.steps.map((s) =>
             stepDataToStep(s, msg.rows, msg.cols, msg.layers, msg.layerHeights),
@@ -76,12 +84,14 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
           setCurrentStep(0);
           setLoading(false);
           setProgress(null);
+          silentRef.current = false;
           worker.removeEventListener("message", handler);
           listenerRef.current = null;
         } else if (msg.type === "error") {
           console.error("Historical sim error:", msg.message);
           setLoading(false);
           setProgress(null);
+          silentRef.current = false;
           worker.removeEventListener("message", handler);
           listenerRef.current = null;
         }
@@ -90,7 +100,6 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
       listenerRef.current = handler;
       worker.addEventListener("message", handler);
 
-      // Send weather data — convert Dates to epoch ms
       worker.postMessage({
         type: "run-historical",
         weather: {
@@ -106,19 +115,31 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
     [workerRef],
   );
 
+  // Transition from silent to visible — show progress if sim is still in-flight
+  const reveal = useCallback(() => {
+    if (listenerRef.current && silentRef.current) {
+      silentRef.current = false;
+      setLoading(true);
+      setProgress({ stage: "Computing simulation...", percent: 0 });
+    }
+  }, []);
+
+  // True if a sim is running (silent or visible)
+  const running = listenerRef.current !== null;
+
   const reset = useCallback(() => {
-    // Cancel in-flight worker computation
     const worker = workerRef.current;
     if (worker && listenerRef.current) {
       worker.postMessage({ type: "cancel" });
       worker.removeEventListener("message", listenerRef.current);
       listenerRef.current = null;
     }
+    silentRef.current = false;
     setSteps(null);
     setCurrentStep(0);
     setLoading(false);
     setProgress(null);
   }, [workerRef]);
 
-  return { steps, currentStep, setCurrentStep, loading, progress, run, reset };
+  return { steps, currentStep, setCurrentStep, loading, progress, run, reveal, running, reset };
 }

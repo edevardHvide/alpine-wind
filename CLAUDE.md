@@ -10,13 +10,14 @@
 
 ## Architecture
 
-Single-page React app running locally (no backend, no cloud):
+Single-page React app with Web Worker computation (no backend for simulation):
 
 - **CesiumJS** — 3D globe with real terrain tiles (Cesium Ion free tier)
+- **Web Worker** — All simulation runs off main thread (`simulation.worker.ts`)
 - **Wind Solver** — Mass-conserving diagnostic wind model with Winstral Sx terrain exposure
 - **Snow Model** — 2D saltation advection with Pomeroy-Gray physics
 - **Historical Simulation** — 12-day weather from NVE API (7 days history + 5 days forecast)
-- **Wind Canvas Layer** — Custom 2D canvas overlay with 6000 particles, Windy.com-style flowing trails
+- **Wind Canvas Layer** — Custom 2D canvas overlay (6000 desktop / 2000 mobile particles)
 - **Snow Overlay** — Canvas texture draped on terrain via SingleTileImageryProvider
 
 ## Tech Stack
@@ -33,12 +34,13 @@ Single-page React app running locally (no backend, no cloud):
 src/
   components/        CesiumViewer, ControlPanel, WindCompass, SnowLegend,
                      TimelineBar, MountainSearch, SnowDepthTooltip, MapCompass,
-                     WelcomePage
-  simulation/        wind-solver, snow-model, terrain-sampler, regions, historical-sim
+                     ScaleBar, WelcomePage
+  simulation/        wind-solver, snow-model, terrain-sampler, terrain-processing,
+                     regions, historical-sim, simulation.worker, worker-protocol
   rendering/         wind-layer-adapter, snow-overlay, color-scales
-  hooks/             useCesium, useSimulation, useAnimationLoop
+  hooks/             useCesium, useSimulation, useHistoricalSim, useAnimationLoop
   api/               nve (weather), kartverket (mountain search)
-  utils/             geo, math
+  utils/             geo, math, device
   types/             wind, terrain, snow
 ```
 
@@ -49,12 +51,18 @@ src/
 | `src/simulation/wind-solver.ts` | Wind field computation with Winstral Sx exposure, 2-layer mass conservation |
 | `src/simulation/snow-model.ts` | 2D saltation advection with Pomeroy-Gray flux, fetch-limited erosion, sublimation |
 | `src/simulation/historical-sim.ts` | Time-stepped simulation using NVE weather data, wind field caching |
-| `src/simulation/terrain-sampler.ts` | Samples 75m elevation grid, precomputes Sx for 8 azimuth sectors |
+| `src/simulation/terrain-sampler.ts` | Samples elevation grid via Cesium API (75m desktop / 120m mobile) |
+| `src/simulation/terrain-processing.ts` | Pure terrain math (derivatives, Sx sectors) — imported by worker |
+| `src/simulation/simulation.worker.ts` | Web Worker — runs wind solver, snow model, historical sim off main thread |
+| `src/simulation/worker-protocol.ts` | Typed message definitions for main↔worker communication |
 | `src/rendering/wind-layer-adapter.ts` | Custom Windy-style canvas particle overlay (6000 particles) |
 | `src/rendering/snow-overlay.ts` | Canvas texture overlay on terrain (manual + historical color modes) |
 | `src/rendering/color-scales.ts` | Snow depth color mapping — brown/white/blue (manual), blue gradient (historical) |
 | `src/api/nve.ts` | NVE GridTimeSeries API client with UTM33 conversion |
-| `src/App.tsx` | Main wiring — auto-simulate, historical mode flow, depth probe |
+| `src/hooks/useSimulation.ts` | Worker-based simulation hook — creates worker, sends/receives messages |
+| `src/hooks/useHistoricalSim.ts` | Historical sim hook — silent background mode, reveal(), worker communication |
+| `src/utils/device.ts` | Mobile detection (narrow screen AND touch) + adaptive constants |
+| `src/App.tsx` | Main wiring — auto-simulate, background prefetch+precompute, depth probe |
 | `src/components/WelcomePage.tsx` | Welcome modal — app overview, usage guide, session-dismissable |
 
 ## Snow Model — 2D Saltation Advection
@@ -96,15 +104,20 @@ The solver was unstable with neighbor-cell pressure corrections at speeds > 4 m/
 
 ## Historical Simulation Mode
 
-User flow: Click "Simulation Mode" → select point on map or search mountain → confirm → loading bar → timeline playback.
+User flow: Search mountain → terrain loads + weather prefetch + background sim auto-starts → click "Run Pow Simulation" → confirm → instant (or near-instant) timeline playback.
 
 ### Key Implementation Details
 
-- **Silent prefetch trick:** API fetch starts when user picks a point (before confirm dialog). When user clicks Confirm, progress bar jumps to wherever the fetch already reached. Uses `showProgressRef` flag to control when `setLoadingProgress` is called.
+- **Background precompute:** When a mountain is selected, weather prefetch starts immediately. Once both weather data AND worker terrain are ready, the full historical sim runs silently in the Web Worker. By the time user clicks Confirm, results are usually already cached.
+- **Three-tier confirm:** `handleConfirmSelection` checks: (1) sim done → instant entry, (2) sim running → `reveal()` shows progress mid-flight, (3) nothing started → full flow fallback.
+- **Silent/reveal pattern:** `useHistoricalSim.run(weather, { silent: true })` runs without UI feedback. `reveal()` transitions to showing progress if the user catches up before the sim finishes.
 - **Wind field caching:** Re-solve only when direction changes >15 degrees or speed >2 m/s. Reduces ~337 solves to ~30.
-- **Async with UI yields:** `setTimeout(0)` every 5 wind solves keeps UI responsive during heavy computation.
 - **Sub-stepping:** 4 sub-steps per 3h interval = 45-minute resolution. Interpolates weather between data points.
 - **Click guard:** `confirmDialogRef` (a ref, not state) prevents Cesium click-through when confirm dialog is open. Refs update synchronously, state doesn't.
+
+### IMPORTANT: Shared Buffer Cloning
+
+`historical-sim.ts` caches and reuses `WindField` objects across steps when wind hasn't changed. Before transferring buffers from worker to main thread, shared wind field buffers MUST be cloned — otherwise earlier steps get detached arrays. See the `seen` Set pattern in `simulation.worker.ts`.
 
 ## Snow Depth Probe
 
@@ -113,7 +126,8 @@ In simulation mode, clicking the map shows a tooltip with predicted snow depth. 
 ## Wind Particle Visualization
 
 Custom 2D canvas overlay (`wind-layer-adapter.ts`), NOT cesium-wind-layer library:
-- 6000 particles with bilinear wind velocity interpolation
+- 6000 particles desktop / 2000 particles mobile (configurable via constructor)
+- Bilinear wind velocity interpolation
 - Trail fading via `globalCompositeOperation: "destination-in"` + alpha fill
 - Color gradient: cyan (calm) → yellow (moderate) → red (strong)
 
@@ -144,15 +158,6 @@ Responsive design using Tailwind `md:` breakpoint (768px):
 
 - `VITE_CESIUM_ION_TOKEN` — Free token from https://ion.cesium.com/tokens
 
-## Key Commands
-
-```bash
-npm install          # Install dependencies
-npm run dev          # Start dev server (http://localhost:5173)
-npm run build        # Production build
-npx tsc --noEmit     # Type check
-```
-
 ## IMPORTANT: CesiumJS Gotchas
 
 - `SingleTileImageryProvider` requires async `fromUrl()` factory (Cesium 1.104+). Old constructor silently fails.
@@ -166,6 +171,26 @@ Terrain height < 40m = water/shore (transparent in snow overlay, no particles). 
 
 ## Terrain Grid Resolution
 
-- **75m cell size** is the current setting (~82K cells for typical region)
+- **75m cell size** on desktop (~82K cells), **120m on mobile** (~32K cells) — adaptive via `device.ts`
 - Don't go below 50m without testing performance (30m = ~500K cells, overloaded browser)
 - Sx precomputation adds ~8 sector grids on load — still fast at 75m
+- Mobile detection uses AND logic: narrow screen (<768px) AND touch capability. OR would wrongly detect touchscreen laptops.
+
+## Web Worker Architecture
+
+- **Worker file:** `simulation.worker.ts` — imports existing pure functions unchanged
+- **Protocol:** `worker-protocol.ts` — typed discriminated union messages
+- **Terrain data:** Sent to worker via structured clone (NOT transfer) because main thread still needs heights for rendering
+- **Terrain processing:** `terrain-processing.ts` extracts pure math (derivatives, Sx) from `terrain-sampler.ts` so the worker doesn't import Cesium
+- **`historical-sim.ts` is unchanged** — its `yieldToUI` calls are harmless in worker context (~120ms overhead, acceptable)
+- **Cancel support:** `cancel` message type + `cancelled` flag checked in progress callback
+
+## Key Commands
+
+```bash
+npm install          # Install dependencies
+npm run dev          # Start dev server (http://localhost:5173)
+npm run build        # Production build
+npx tsc --noEmit     # Type check
+npx playwright test  # E2E smoke tests (headless Chromium)
+```

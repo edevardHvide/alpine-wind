@@ -21,6 +21,7 @@ export function useSimulation() {
   const terrainRef = useRef<ElevationGrid | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const terrainSentRef = useRef(false);
+  const [workerReady, setWorkerReady] = useState(false);
 
   // Create worker on mount
   useEffect(() => {
@@ -53,6 +54,7 @@ export function useSimulation() {
         });
       } else if (msg.type === "terrain-ready") {
         terrainSentRef.current = true;
+        setWorkerReady(true);
       } else if (msg.type === "error") {
         console.error("Simulation worker error:", msg.message);
         setState((s) => ({ ...s, simulating: false }));
@@ -70,6 +72,7 @@ export function useSimulation() {
   const setTerrain = useCallback((grid: ElevationGrid) => {
     terrainRef.current = grid;
     terrainSentRef.current = false;
+    setWorkerReady(false);
 
     const worker = workerRef.current;
     if (!worker) return;
@@ -96,5 +99,5 @@ export function useSimulation() {
     worker.postMessage({ type: "run-simulation", params });
   }, []);
 
-  return { state, setTerrain, runSimulation, clearSimulation, terrainRef, workerRef };
+  return { state, setTerrain, runSimulation, clearSimulation, terrainRef, workerRef, workerReady };
 }

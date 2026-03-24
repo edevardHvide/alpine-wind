@@ -48,7 +48,7 @@ export default function App() {
   const viewerRef = useRef<Viewer | null>(null);
   const windLayerRef = useRef<WindCanvasLayer | null>(null);
   const prefetchRef = useRef<Promise<WeatherTimeSeries> | null>(null);
-  const { state, setTerrain, runSimulation, clearSimulation, terrainRef, workerRef } = useSimulation();
+  const { state, setTerrain, runSimulation, clearSimulation, terrainRef, workerRef, workerReady } = useSimulation();
   const historicalSim = useHistoricalSim(workerRef);
 
   // Derive displayed progress: prefetch phase OR worker computation phase
@@ -146,6 +146,21 @@ export default function App() {
     windLayerRef.current.show = showWind;
   }, [historicalSim.currentStep, historicalSim.steps, historicalMode, showSnow, showWind]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-start historical sim in background once worker terrain + weather are both ready
+  const backgroundWeatherRef = useRef<WeatherTimeSeries | null>(null);
+  useEffect(() => {
+    if (!workerReady || historicalMode || !prefetchRef.current) return;
+    // Worker has terrain, prefetch is in-flight — await it then start sim silently
+    const prefetch = prefetchRef.current;
+    let cancelled = false;
+    prefetch.then((weather) => {
+      if (cancelled || historicalMode) return;
+      backgroundWeatherRef.current = weather;
+      historicalSim.run(weather, { silent: true });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [workerReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Start prefetching weather data silently (called when a point is picked)
   const prefetchProgressRef = useRef<{ stage: string; percent: number }>({ stage: "", percent: 0 });
   const showProgressRef = useRef(false);
@@ -171,7 +186,10 @@ export default function App() {
       setSelectedPoint(searchedMountain);
       setShowConfirmDialog(true);
       confirmDialogRef.current = true;
-      startPrefetch(searchedMountain.lat, searchedMountain.lng);
+      // Reuse in-flight prefetch if already started on mountain select
+      if (!prefetchRef.current) {
+        startPrefetch(searchedMountain.lat, searchedMountain.lng);
+      }
     } else {
       setSelectionMode(true);
       setSelectedPoint(null);
@@ -191,23 +209,36 @@ export default function App() {
 
   // Confirm selected point and run historical simulation
   const handleConfirmSelection = useCallback(async () => {
-    if (!prefetchRef.current) return;
-
     confirmDialogRef.current = false;
     setShowConfirmDialog(false);
     setSelectionMode(false);
     clearOverlays();
     clearSimulation();
 
-    // Reveal prefetch progress — jump to wherever the silent prefetch already got
+    // Case 1: Background sim already completed — instant entry
+    if (historicalSim.steps) {
+      setHistoricalMode(true);
+      setSelectedPoint(null);
+      return;
+    }
+
+    // Case 2: Background sim is running — reveal its progress
+    if (historicalSim.running) {
+      historicalSim.reveal();
+      setHistoricalMode(true);
+      setSelectedPoint(null);
+      return;
+    }
+
+    // Case 3: No background sim — start from scratch (weather may still be fetching)
+    if (!prefetchRef.current) return;
     showProgressRef.current = true;
     setLoadingProgress({ ...prefetchProgressRef.current });
 
     try {
-      // Await the already-in-flight prefetch
       const weather = await prefetchRef.current;
       prefetchRef.current = null;
-      setLoadingProgress(null); // Clear prefetch progress — worker will show its own
+      setLoadingProgress(null);
       historicalSim.run(weather);
       setHistoricalMode(true);
       setSelectedPoint(null);
@@ -322,8 +353,13 @@ export default function App() {
           setTerrainReady(false);
           clearSimulation();
           clearOverlays();
+          historicalSim.reset(); // Cancel any in-flight background sim
+          backgroundWeatherRef.current = null;
           if (historicalMode) exitHistoricalMode();
           setRegion(regionFromCoordinates(m.name, m.lat, m.lng));
+          // Start weather prefetch immediately — background sim will auto-start
+          // once both weather + worker terrain are ready
+          startPrefetch(m.lat, m.lng);
         }}
         onToggleSnow={() => setShowSnow((s) => !s)}
         onToggleWind={() => {
