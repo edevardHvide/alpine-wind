@@ -12,6 +12,7 @@ import { useSimulation } from "./hooks/useSimulation.ts";
 import { useHistoricalSim } from "./hooks/useHistoricalSim.ts";
 import { renderSnowOverlay, removeSnowOverlay } from "./rendering/snow-overlay.ts";
 import { WindCanvasLayer } from "./rendering/wind-layer-adapter.ts";
+import { isMobileDevice, MOBILE_PARTICLE_COUNT, DESKTOP_PARTICLE_COUNT } from "./utils/device.ts";
 import type { WindParams } from "./types/wind.ts";
 import type { Viewer } from "cesium";
 
@@ -87,7 +88,8 @@ export default function App() {
     if (windLayerRef.current && !windLayerRef.current.isDestroyed()) {
       windLayerRef.current.updateWindData(state.windField, terrain);
     } else {
-      windLayerRef.current = new WindCanvasLayer(viewer, state.windField, terrain);
+      const particleCount = isMobileDevice() ? MOBILE_PARTICLE_COUNT : DESKTOP_PARTICLE_COUNT;
+      windLayerRef.current = new WindCanvasLayer(viewer, state.windField, terrain, particleCount);
     }
     windLayerRef.current.show = showWind;
   }, [state.windField, historicalMode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -133,7 +135,8 @@ export default function App() {
     if (windLayerRef.current && !windLayerRef.current.isDestroyed()) {
       windLayerRef.current.updateWindData(step.windField, terrain);
     } else {
-      windLayerRef.current = new WindCanvasLayer(viewer, step.windField, terrain);
+      const particleCount = isMobileDevice() ? MOBILE_PARTICLE_COUNT : DESKTOP_PARTICLE_COUNT;
+      windLayerRef.current = new WindCanvasLayer(viewer, step.windField, terrain, particleCount);
     }
     windLayerRef.current.show = showWind;
   }, [historicalSim.currentStep, historicalSim.steps, historicalMode, showSnow, showWind]); // eslint-disable-line react-hooks/exhaustive-deps
