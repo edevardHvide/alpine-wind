@@ -35,35 +35,44 @@ export function snowDepthColor(depthCm: number, isPowder: boolean, baseCm = 30):
 }
 
 export function historicalSnowColor(depthCm: number): [number, number, number, number] {
-  if (depthCm < 0.5) return [220, 235, 255, 30]; // near-transparent
+  if (depthCm < 0.5) return [200, 220, 240, 15]; // near-transparent hint
 
   const t = Math.min(depthCm / 60, 1); // 0 = no snow, 1 = 60cm+
 
-  if (t < 0.17) {
-    // 0-10cm: very light → light blue
-    const s = t / 0.17;
+  if (t < 0.12) {
+    // 0-7cm: faint dusting — light tint that darkens terrain slightly
+    const s = t / 0.12;
     return [
-      Math.round(220 - s * 90),
-      Math.round(235 - s * 55),
-      Math.round(255 - s * 15),
-      Math.round(80 + s * 175),
+      Math.round(180 - s * 60),
+      Math.round(200 - s * 40),
+      Math.round(230 - s * 10),
+      Math.round(40 + s * 80),
     ];
-  } else if (t < 0.5) {
-    // 10-30cm: light blue → medium blue
-    const s = (t - 0.17) / 0.33;
+  } else if (t < 0.35) {
+    // 7-21cm: moderate — cool blue, terrain noticeably darker
+    const s = (t - 0.12) / 0.23;
     return [
-      Math.round(130 - s * 80),
-      Math.round(180 - s * 80),
-      Math.round(240 - s * 40),
-      255,
+      Math.round(120 - s * 60),
+      Math.round(160 - s * 50),
+      Math.round(220 - s * 20),
+      Math.round(120 + s * 100),
+    ];
+  } else if (t < 0.65) {
+    // 21-39cm: deep accumulation — rich blue, mostly opaque
+    const s = (t - 0.35) / 0.3;
+    return [
+      Math.round(60 - s * 25),
+      Math.round(110 - s * 50),
+      Math.round(200 - s * 30),
+      Math.round(220 + s * 35),
     ];
   } else {
-    // 30-60cm+: medium blue → deep blue/purple
-    const s = (t - 0.5) / 0.5;
+    // 39-60cm+: very deep — dark blue-indigo, fully opaque, terrain dark
+    const s = (t - 0.65) / 0.35;
     return [
-      Math.round(50 - s * 20),
-      Math.round(100 - s * 70),
-      Math.round(200 - s * 60),
+      Math.round(35 - s * 15),
+      Math.round(60 - s * 30),
+      Math.round(170 - s * 40),
       255,
     ];
   }

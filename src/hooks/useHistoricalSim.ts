@@ -2,7 +2,7 @@
 import { useState, useCallback, useRef } from "react";
 import type { WindField } from "../types/wind.ts";
 import type { SnowDepthGrid } from "../types/snow.ts";
-import type { WeatherTimeSeries } from "../api/nve.ts";
+import type { SpatialWeatherTimeSeries } from "../api/nve.ts";
 import type { WorkerResponse, HistoricalStepData } from "../simulation/worker-protocol.ts";
 
 export interface HistoricalStep {
@@ -52,7 +52,7 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
   const silentRef = useRef(false);
 
   const run = useCallback(
-    (weather: WeatherTimeSeries, options?: { silent?: boolean }) => {
+    (weather: SpatialWeatherTimeSeries, options?: { silent?: boolean }) => {
       const worker = workerRef.current;
       if (!worker) return;
 
@@ -100,15 +100,22 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
       listenerRef.current = handler;
       worker.addEventListener("message", handler);
 
+      // Convert stations to worker format with typed arrays
+      const stationData = weather.stations.map((s) => ({
+        lat: s.lat,
+        lng: s.lng,
+        altitude: s.altitude,
+        temp: Float64Array.from(s.temp),
+        precip: Float64Array.from(s.precip),
+        windSpeed: Float64Array.from(s.windSpeed),
+        windDir: Float64Array.from(s.windDir),
+      }));
+
       worker.postMessage({
         type: "run-historical",
         weather: {
           timestamps: weather.timestamps.map((d) => d.getTime()),
-          temp: Float64Array.from(weather.temp),
-          precip: Float64Array.from(weather.precip),
-          windSpeed: Float64Array.from(weather.windSpeed),
-          windDir: Float64Array.from(weather.windDir),
-          altitude: weather.altitude,
+          stations: stationData,
         },
       });
     },

@@ -9,10 +9,10 @@ import TimelineBar from "./components/TimelineBar.tsx";
 import WelcomePage from "./components/WelcomePage.tsx";
 import { REGIONS, regionFromCoordinates } from "./simulation/regions.ts";
 import type { MountainResult } from "./api/kartverket.ts";
-import { fetchWeatherTimeSeries, type WeatherTimeSeries } from "./api/nve.ts";
+import { fetchSpatialWeather, type SpatialWeatherTimeSeries } from "./api/nve.ts";
 import { useSimulation } from "./hooks/useSimulation.ts";
 import { useHistoricalSim } from "./hooks/useHistoricalSim.ts";
-import { renderSnowOverlay, removeSnowOverlay } from "./rendering/snow-overlay.ts";
+import { renderSnowOverlay, removeSnowOverlay, SnowOverlayManager } from "./rendering/snow-overlay.ts";
 import { WindCanvasLayer } from "./rendering/wind-layer-adapter.ts";
 import { isMobileDevice, MOBILE_PARTICLE_COUNT, DESKTOP_PARTICLE_COUNT } from "./utils/device.ts";
 import type { WindParams } from "./types/wind.ts";
@@ -42,12 +42,18 @@ export default function App() {
   const [searchedMountain, setSearchedMountain] = useState<{ lat: number; lng: number; name: string } | null>(null);
 
   // Snow depth probe (click in simulation mode)
-  const [depthProbe, setDepthProbe] = useState<{ lat: number; lng: number; depthCm: number; screenX: number; screenY: number } | null>(null);
+  const [depthProbe, setDepthProbe] = useState<{
+    lat: number; lng: number; depthCm: number;
+    screenX: number; screenY: number;
+    temp?: number; precip?: number; windSpeed?: number; windDir?: number;
+    elevation?: number;
+  } | null>(null);
 
   const [cesiumViewer, setCesiumViewer] = useState<Viewer | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const windLayerRef = useRef<WindCanvasLayer | null>(null);
-  const prefetchRef = useRef<Promise<WeatherTimeSeries> | null>(null);
+  const prefetchRef = useRef<Promise<SpatialWeatherTimeSeries> | null>(null);
+  const snowOverlayRef = useRef<SnowOverlayManager | null>(null);
   const { state, setTerrain, runSimulation, clearSimulation, terrainRef, workerRef, workerReady } = useSimulation();
   const historicalSim = useHistoricalSim(workerRef);
 
@@ -66,6 +72,11 @@ export default function App() {
   // Clear overlays helper
   const clearOverlays = useCallback(() => {
     if (viewerRef.current) removeSnowOverlay(viewerRef.current);
+    if (snowOverlayRef.current) {
+      snowOverlayRef.current.destroy();
+      snowOverlayRef.current = null;
+    }
+    lastRenderedStep.current = -1;
     if (windLayerRef.current && !windLayerRef.current.isDestroyed()) {
       windLayerRef.current.destroy();
       windLayerRef.current = null;
@@ -121,7 +132,10 @@ export default function App() {
     };
   }, [state.snowGrid, showSnow, historicalMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Historical mode: render current step
+  // Historical mode: render current step with smooth interpolation
+  const interpRaf = useRef<number | null>(null);
+  const lastRenderedStep = useRef(-1);
+
   useEffect(() => {
     if (!historicalMode || !historicalSim.steps) return;
     const step = historicalSim.steps[historicalSim.currentStep];
@@ -131,10 +145,17 @@ export default function App() {
     const terrain = terrainRef.current;
     if (!viewer || !terrain) return;
 
-    // Update snow overlay
-    if (showSnow) {
-      renderSnowOverlay(viewer, step.snowGrid, terrain, "historical");
+    // Cancel any in-flight interpolation
+    if (interpRaf.current !== null) {
+      cancelAnimationFrame(interpRaf.current);
+      interpRaf.current = null;
     }
+
+    // Ensure we have an overlay manager
+    if (!snowOverlayRef.current) {
+      snowOverlayRef.current = new SnowOverlayManager(viewer);
+    }
+    const overlayMgr = snowOverlayRef.current;
 
     // Update wind layer
     if (windLayerRef.current && !windLayerRef.current.isDestroyed()) {
@@ -144,10 +165,59 @@ export default function App() {
       windLayerRef.current = new WindCanvasLayer(viewer, step.windField, terrain, particleCount);
     }
     windLayerRef.current.show = showWind;
+
+    if (!showSnow) {
+      overlayMgr.remove();
+      lastRenderedStep.current = historicalSim.currentStep;
+      return;
+    }
+
+    const prevStep = lastRenderedStep.current;
+    const curIdx = historicalSim.currentStep;
+    lastRenderedStep.current = curIdx;
+
+    // If stepping by 1 and we have a previous step, interpolate smoothly
+    const prevData = prevStep >= 0 ? historicalSim.steps[prevStep] : null;
+    const isAdjacentStep = prevData && Math.abs(curIdx - prevStep) === 1;
+
+    if (isAdjacentStep && prevData) {
+      // Animate interpolation over ~250ms
+      const INTERP_MS = 250;
+      const start = performance.now();
+      const depthA = prevData.snowGrid.depth;
+      const depthB = step.snowGrid.depth;
+      const { rows, cols } = step.snowGrid;
+
+      const animate = () => {
+        const elapsed = performance.now() - start;
+        const t = Math.min(elapsed / INTERP_MS, 1);
+        // Ease-out quadratic for natural feel
+        const ease = 1 - (1 - t) * (1 - t);
+
+        overlayMgr.renderInterpolated(depthA, depthB, ease, rows, cols, terrain);
+
+        if (t < 1) {
+          interpRaf.current = requestAnimationFrame(animate);
+        } else {
+          interpRaf.current = null;
+        }
+      };
+      interpRaf.current = requestAnimationFrame(animate);
+    } else {
+      // Direct render (scrubbing, first frame, or big jump)
+      overlayMgr.render(step.snowGrid, terrain, "historical");
+    }
+
+    return () => {
+      if (interpRaf.current !== null) {
+        cancelAnimationFrame(interpRaf.current);
+        interpRaf.current = null;
+      }
+    };
   }, [historicalSim.currentStep, historicalSim.steps, historicalMode, showSnow, showWind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-start historical sim in background once worker terrain + weather are both ready
-  const backgroundWeatherRef = useRef<WeatherTimeSeries | null>(null);
+  const backgroundWeatherRef = useRef<SpatialWeatherTimeSeries | null>(null);
   useEffect(() => {
     if (!workerReady || historicalMode || !prefetchRef.current) return;
     // Worker has terrain, prefetch is in-flight — await it then start sim silently
@@ -166,12 +236,19 @@ export default function App() {
   const showProgressRef = useRef(false);
 
   const startPrefetch = useCallback((lat: number, lng: number) => {
-    prefetchProgressRef.current = { stage: "Finding weather station...", percent: 0 };
+    prefetchProgressRef.current = { stage: "Finding weather stations...", percent: 0 };
     showProgressRef.current = false;
-    prefetchRef.current = fetchWeatherTimeSeries(lat, lng, 7, 5,
+    // Compute bbox for spatial weather fetch (same logic as regionFromCoordinates)
+    const latSpan = 0.2;
+    const cosLat = Math.max(Math.cos((lat * Math.PI) / 180), 0.3);
+    const lngSpan = Math.min(0.5 / cosLat, 0.6);
+    prefetchRef.current = fetchSpatialWeather(
+      lat, lng,
+      lng - lngSpan / 2, lat - latSpan / 2,
+      lng + lngSpan / 2, lat + latSpan / 2,
+      7, 5,
       (stage, percent) => {
         prefetchProgressRef.current = { stage, percent };
-        // Only update visible progress if confirm has been pressed
         if (showProgressRef.current) {
           setLoadingProgress({ stage, percent });
         }
@@ -266,6 +343,7 @@ export default function App() {
     setSelectedPoint(null);
     confirmDialogRef.current = false;
     setShowConfirmDialog(false);
+    lastRenderedStep.current = -1;
     clearOverlays();
     // Re-trigger manual simulation
     prevKey.current = "";
@@ -292,8 +370,67 @@ export default function App() {
 
     const gi = row * terrain.cols + col;
     const depthCm = step.snowGrid.depth[gi];
+    const elevation = terrain.heights[gi];
 
-    setDepthProbe({ lat, lng, depthCm, screenX, screenY });
+    // IDW-interpolate weather from stations at clicked point
+    const weather = backgroundWeatherRef.current;
+    let temp = step.temp;
+    let precip = step.precip;
+    let windSpeed = step.windSpeed;
+    let windDir = step.windDir;
+
+    if (weather && weather.stations.length > 0) {
+      // Find the original timestep index for this sub-step
+      // Steps are generated as (len-1)*SUB_STEPS + 1, with SUB_STEPS=4
+      const stepIdx = historicalSim.currentStep;
+      const dataIdx = Math.min(Math.floor(stepIdx / 4), weather.timestamps.length - 1);
+
+      const stations = weather.stations;
+      if (stations.length === 1) {
+        temp = stations[0].temp[dataIdx];
+        precip = stations[0].precip[dataIdx];
+        windSpeed = stations[0].windSpeed[dataIdx];
+        windDir = stations[0].windDir[dataIdx];
+      } else {
+        // IDW at clicked lat/lng
+        let totalW = 0;
+        let wTemp = 0, wPrecip = 0, wWindSpeed = 0;
+        let sinSum = 0, cosSum = 0;
+
+        for (const s of stations) {
+          const dlat = lat - s.lat;
+          const dlng = (lng - s.lng) * Math.cos(lat * Math.PI / 180);
+          const dist2 = dlat * dlat + dlng * dlng;
+          const w = dist2 < 1e-10 ? 1e10 : 1 / dist2;
+          totalW += w;
+          wTemp += s.temp[dataIdx] * w;
+          wPrecip += s.precip[dataIdx] * w;
+          wWindSpeed += s.windSpeed[dataIdx] * w;
+          const rad = s.windDir[dataIdx] * Math.PI / 180;
+          sinSum += Math.sin(rad) * w;
+          cosSum += Math.cos(rad) * w;
+        }
+
+        temp = wTemp / totalW;
+        precip = wPrecip / totalW;
+        windSpeed = wWindSpeed / totalW;
+        windDir = ((Math.atan2(sinSum / totalW, cosSum / totalW) * 180 / Math.PI) + 360) % 360;
+
+        // Lapse rate correction: adjust temp for elevation difference
+        // between terrain cell and IDW-weighted station altitude
+        let refAlt = 0;
+        for (const s of stations) {
+          const dlat2 = lat - s.lat;
+          const dlng2 = (lng - s.lng) * Math.cos(lat * Math.PI / 180);
+          const d2 = dlat2 * dlat2 + dlng2 * dlng2;
+          const w2 = d2 < 1e-10 ? 1e10 : 1 / d2;
+          refAlt += s.altitude * (w2 / totalW);
+        }
+        temp += (elevation - refAlt) * (-6.5 / 1000);
+      }
+    }
+
+    setDepthProbe({ lat, lng, depthCm, screenX, screenY, temp, precip, windSpeed, windDir, elevation });
   }, [historicalMode, historicalSim.steps, historicalSim.currentStep, terrainRef]);
 
   // Clear probe when step changes
@@ -446,6 +583,11 @@ export default function App() {
           lng={depthProbe.lng}
           screenX={depthProbe.screenX}
           screenY={depthProbe.screenY}
+          temp={depthProbe.temp}
+          precip={depthProbe.precip}
+          windSpeed={depthProbe.windSpeed}
+          windDir={depthProbe.windDir}
+          elevation={depthProbe.elevation}
           onClose={() => setDepthProbe(null)}
         />
       )}

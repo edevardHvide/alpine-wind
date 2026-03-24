@@ -18,15 +18,21 @@ export interface RunSimulationMessage {
   params: WindParams;
 }
 
+export interface WeatherStationData {
+  lat: number;
+  lng: number;
+  altitude: number;
+  temp: Float64Array;
+  precip: Float64Array;
+  windSpeed: Float64Array;
+  windDir: Float64Array;
+}
+
 export interface RunHistoricalMessage {
   type: "run-historical";
   weather: {
     timestamps: number[];   // epoch ms (Date not transferable)
-    temp: Float64Array;
-    precip: Float64Array;
-    windSpeed: Float64Array;
-    windDir: Float64Array;
-    altitude: number;
+    stations: WeatherStationData[];
   };
 }
 

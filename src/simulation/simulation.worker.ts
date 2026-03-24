@@ -8,6 +8,7 @@ import { computeDerivatives, precomputeSxSectors } from "./terrain-processing.ts
 import { solveWindField } from "./wind-solver.ts";
 import { computeSnowAccumulation } from "./snow-model.ts";
 import { runHistoricalSimulation } from "./historical-sim.ts";
+import type { SpatialWeatherTimeSeries, WeatherStation } from "../api/nve.ts";
 
 let terrain: ElevationGrid | null = null;
 let cancelled = false;
@@ -69,13 +70,20 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       if (!terrain) throw new Error("Terrain not initialized");
       cancelled = false;
 
-      const weather = {
+      // Convert worker message format to SpatialWeatherTimeSeries
+      const stations: WeatherStation[] = msg.weather.stations.map((s) => ({
+        lat: s.lat,
+        lng: s.lng,
+        altitude: s.altitude,
+        temp: Array.from(s.temp),
+        precip: Array.from(s.precip),
+        windSpeed: Array.from(s.windSpeed),
+        windDir: Array.from(s.windDir),
+      }));
+
+      const weather: SpatialWeatherTimeSeries = {
         timestamps: msg.weather.timestamps.map((t: number) => new Date(t)),
-        temp: Array.from(msg.weather.temp),
-        precip: Array.from(msg.weather.precip),
-        windSpeed: Array.from(msg.weather.windSpeed),
-        windDir: Array.from(msg.weather.windDir),
-        altitude: msg.weather.altitude,
+        stations,
       };
 
       const steps = await runHistoricalSimulation(terrain, weather,

@@ -32,15 +32,16 @@ function advectSaltation(
   terrain: ElevationGrid,
   wind: WindField,
   params: WindParams,
-  snowfallCm: number,
+  snowfallCm: number | Float64Array,
 ): Float64Array {
   const { rows, cols, heights, slopes, cellSizeMeters } = terrain;
   const n = rows * cols;
 
-  // Start with uniform snowfall on land
+  // Start with snowfall on land — uniform scalar or per-cell array
   const snow = new Float64Array(n);
+  const isArray = typeof snowfallCm !== "number";
   for (let i = 0; i < n; i++) {
-    if (heights[i] >= 40) snow[i] = snowfallCm;
+    if (heights[i] >= 40) snow[i] = isArray ? snowfallCm[i] : snowfallCm;
   }
 
   // No redistribution at calm wind
@@ -56,7 +57,11 @@ function advectSaltation(
 
   // Scale factor: maps normalized flux [0,1] to cm of erosion per iteration
   // At max flux, erode up to ~snowfallCm/4 per iteration (aggressive but bounded)
-  const erosionScale = snowfallCm * 0.25;
+  // For per-cell snowfall, use mean as reference scale
+  const meanFall = isArray
+    ? snow.reduce((a, b) => a + b, 0) / Math.max(n, 1)
+    : (snowfallCm as number);
+  const erosionScale = meanFall * 0.25;
 
   for (let iter = 0; iter < ADVECTION_ITERATIONS; iter++) {
     // 1. Erosion & deposition per cell
@@ -88,8 +93,9 @@ function advectSaltation(
 
       // Slope shedding: steep slopes shed deposited snow
       const slopeDeg = slopes[i] * (180 / Math.PI);
-      if (slopeDeg > 40 && snow[i] > snowfallCm * 0.5) {
-        const excess = (snow[i] - snowfallCm * 0.5) * smoothstep(40, 55, slopeDeg) * 0.3;
+      const cellFall = isArray ? snowfallCm[i] : (snowfallCm as number);
+      if (slopeDeg > 40 && snow[i] > cellFall * 0.5) {
+        const excess = (snow[i] - cellFall * 0.5) * smoothstep(40, 55, slopeDeg) * 0.3;
         snow[i] -= excess;
         massInTransport[i] += excess * 0.5;
       }
@@ -148,19 +154,25 @@ export function computeSnowAccumulation(
   terrain: ElevationGrid,
   wind: WindField,
   params: WindParams,
-  snowfallCm = BASE_SNOWFALL_CM,
+  snowfallCm: number | Float64Array = BASE_SNOWFALL_CM,
 ): SnowDepthGrid {
   const { rows, cols, slopes, heights } = terrain;
   const n = rows * cols;
   const isPowderZone = new Uint8Array(n);
 
-  // No snow above freezing
-  if (params.temperature > 1) {
+  // No snow above freezing (only for uniform scalar snowfall — per-cell arrays
+  // already have temperature filtering baked in from the spatial interpolation)
+  if (typeof snowfallCm === "number" && params.temperature > 1) {
     return { depth: new Float64Array(n), isPowderZone, rows, cols };
   }
 
   // Advection-based redistribution
   const depth = advectSaltation(terrain, wind, params, snowfallCm);
+
+  // For powder detection, use mean snowfall as reference
+  const meanSnowfall = typeof snowfallCm === "number"
+    ? snowfallCm
+    : snowfallCm.reduce((a, b) => a + b, 0) / Math.max(n, 1);
 
   // Powder zone detection: powder survives in sheltered, low-wind areas
   const inPowderTemp = params.temperature >= POWDER_TEMP_MIN && params.temperature <= POWDER_TEMP_MAX;
@@ -172,7 +184,8 @@ export function computeSnowAccumulation(
       if (!skiable) continue;
 
       const surfaceSpeed = Math.sqrt(wind.u[i] ** 2 + wind.v[i] ** 2);
-      const isWindLoaded = depth[i] > snowfallCm * 1.15; // received significant deposition
+      const baseSnow = typeof snowfallCm === "number" ? snowfallCm : snowfallCm[i];
+      const isWindLoaded = depth[i] > baseSnow * 1.15;
       const isLowWind = surfaceSpeed < thresholdWindSpeed(params.temperature) * 0.7;
 
       if (isLowWind && !isWindLoaded) {
@@ -188,7 +201,7 @@ export function computeSnowAccumulation(
     if (depth[i] < minD) minD = depth[i];
     if (depth[i] > maxD) maxD = depth[i];
   }
-  console.log(`Snow model: ${snowfallCm}cm base, ${landCells} land cells, depth range: ${minD.toFixed(1)}-${maxD.toFixed(1)}cm`);
+  console.log(`Snow model: ${meanSnowfall.toFixed(1)}cm avg base, ${landCells} land cells, depth range: ${minD.toFixed(1)}-${maxD.toFixed(1)}cm`);
 
   return { depth, isPowderZone, rows, cols };
 }
