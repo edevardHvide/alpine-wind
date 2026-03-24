@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import CesiumViewer from "./components/CesiumViewer.tsx";
 import ControlPanel from "./components/ControlPanel.tsx";
 import SnowLegend from "./components/SnowLegend.tsx";
+import SnowDepthTooltip from "./components/SnowDepthTooltip.tsx";
 import TimelineBar from "./components/TimelineBar.tsx";
 import { REGIONS, regionFromCoordinates } from "./simulation/regions.ts";
 import type { MountainResult } from "./api/kartverket.ts";
@@ -35,6 +36,9 @@ export default function App() {
   const [selectedPoint, setSelectedPoint] = useState<{ lat: number; lng: number; name?: string } | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState<{ stage: string; percent: number } | null>(null);
+
+  // Snow depth probe (click in simulation mode)
+  const [depthProbe, setDepthProbe] = useState<{ lat: number; lng: number; depthCm: number; screenX: number; screenY: number } | null>(null);
 
   const viewerRef = useRef<Viewer | null>(null);
   const windLayerRef = useRef<WindCanvasLayer | null>(null);
@@ -227,6 +231,36 @@ export default function App() {
     prevKey.current = "";
   }, [clearOverlays]);
 
+  // Handle snow depth probe click in simulation mode
+  const handleProbeClick = useCallback((lat: number, lng: number, screenX: number, screenY: number) => {
+    if (!historicalMode || !historicalSteps) return;
+    const terrain = terrainRef.current;
+    if (!terrain) return;
+
+    const step = historicalSteps[historicalStep];
+    if (!step) return;
+
+    // Convert lat/lng to grid row/col
+    const { bbox } = terrain;
+    const row = Math.round(((lat - bbox.south) / (bbox.north - bbox.south)) * terrain.rows - 0.5);
+    const col = Math.round(((lng - bbox.west) / (bbox.east - bbox.west)) * terrain.cols - 0.5);
+
+    if (row < 0 || row >= terrain.rows || col < 0 || col >= terrain.cols) {
+      setDepthProbe(null);
+      return;
+    }
+
+    const gi = row * terrain.cols + col;
+    const depthCm = step.snowGrid.depth[gi];
+
+    setDepthProbe({ lat, lng, depthCm, screenX, screenY });
+  }, [historicalMode, historicalSteps, historicalStep, terrainRef]);
+
+  // Clear probe when step changes
+  useEffect(() => {
+    setDepthProbe(null);
+  }, [historicalStep]);
+
   // Handle timeline step change
   const handleStepChange = useCallback((step: number) => {
     setHistoricalStep((prev) => {
@@ -244,8 +278,10 @@ export default function App() {
       <CesiumViewer
         region={region}
         selectionMode={selectionMode}
+        historicalMode={historicalMode}
         selectedPoint={selectedPoint}
         onMapClick={handleMapClick}
+        onProbeClick={handleProbeClick}
         onTerrainReady={handleTerrainReady}
         onViewerReady={(v: Viewer) => {
           viewerRef.current = v;
@@ -350,6 +386,17 @@ export default function App() {
       )}
 
       {showSnow && (state.snowGrid || historicalMode) && <SnowLegend mode={historicalMode ? "historical" : "manual"} />}
+
+      {depthProbe && (
+        <SnowDepthTooltip
+          depthCm={depthProbe.depthCm}
+          lat={depthProbe.lat}
+          lng={depthProbe.lng}
+          screenX={depthProbe.screenX}
+          screenY={depthProbe.screenY}
+          onClose={() => setDepthProbe(null)}
+        />
+      )}
     </div>
   );
 }

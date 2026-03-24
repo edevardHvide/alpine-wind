@@ -50,6 +50,14 @@ function advectSaltation(
   const uStarTh = thresholdFrictionVelocity(params.temperature);
   const windStrength = smoothstep(0, 2, params.speed);
 
+  // Reference max flux for normalization (30 m/s wind)
+  const uStarMax = 30 * KARMAN_DRAG_COEFF;
+  const qRef = uStarMax * (uStarMax * uStarMax - uStarTh * uStarTh);
+
+  // Scale factor: maps normalized flux [0,1] to cm of erosion per iteration
+  // At max flux, erode up to ~snowfallCm/4 per iteration (aggressive but bounded)
+  const erosionScale = snowfallCm * 0.25;
+
   for (let iter = 0; iter < ADVECTION_ITERATIONS; iter++) {
     // 1. Erosion & deposition per cell
     for (let i = 0; i < n; i++) {
@@ -58,19 +66,21 @@ function advectSaltation(
       const speed = Math.sqrt(wind.u[i] ** 2 + wind.v[i] ** 2);
       const uStar = speed * KARMAN_DRAG_COEFF;
 
-      // Erosion: Pomeroy flux, fetch-limited (only erode when below equilibrium transport)
+      // Erosion: Pomeroy flux normalized to [0,1], fetch-limited
       if (uStar > uStarTh && snow[i] > 0.1) {
-        const equilibrium = uStar * (uStar * uStar - uStarTh * uStarTh);
-        const deficit = Math.max(0, equilibrium - massInTransport[i]);
-        const eroded = Math.min(deficit * 0.25 * windStrength, snow[i] * 0.2);
+        const qNorm = clamp((uStar * (uStar * uStar - uStarTh * uStarTh)) / qRef, 0, 1);
+        const equilibriumTransport = qNorm * erosionScale;
+        const deficit = Math.max(0, equilibriumTransport - massInTransport[i]);
+        const eroded = Math.min(deficit * windStrength, snow[i] * 0.4);
         snow[i] -= eroded;
         massInTransport[i] += eroded;
       }
 
-      // Deposition: in sheltered areas (positive Sx)
+      // Deposition: in sheltered areas (positive Sx) or where wind drops
       const sx = wind.exposure[i];
-      if (sx > 0.01 && massInTransport[i] > 0.01) {
-        const depRate = clamp(sx * 5, 0, 0.35);
+      if (sx > 0.005 && massInTransport[i] > 0.01) {
+        // Stronger deposition in more sheltered areas
+        const depRate = clamp(sx * 8, 0, 0.5);
         const deposited = massInTransport[i] * depRate;
         snow[i] += deposited;
         massInTransport[i] -= deposited;
@@ -78,10 +88,10 @@ function advectSaltation(
 
       // Slope shedding: steep slopes shed deposited snow
       const slopeDeg = slopes[i] * (180 / Math.PI);
-      if (slopeDeg > 40 && snow[i] > snowfallCm) {
-        const excess = (snow[i] - snowfallCm) * smoothstep(40, 55, slopeDeg) * 0.3;
+      if (slopeDeg > 40 && snow[i] > snowfallCm * 0.5) {
+        const excess = (snow[i] - snowfallCm * 0.5) * smoothstep(40, 55, slopeDeg) * 0.3;
         snow[i] -= excess;
-        massInTransport[i] += excess * 0.5; // half re-enters transport, half lost
+        massInTransport[i] += excess * 0.5;
       }
     }
 

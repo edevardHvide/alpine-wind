@@ -23,8 +23,10 @@ Ion.defaultAccessToken =
 interface CesiumViewerProps {
   region: TerrainRegion;
   selectionMode?: boolean;
+  historicalMode?: boolean;
   selectedPoint?: { lat: number; lng: number; name?: string } | null;
   onMapClick?: (lat: number, lng: number) => void;
+  onProbeClick?: (lat: number, lng: number, screenX: number, screenY: number) => void;
   onTerrainReady?: (grid: ElevationGrid) => void;
   onViewerReady?: (viewer: Viewer) => void;
 }
@@ -32,8 +34,10 @@ interface CesiumViewerProps {
 export default function CesiumViewer({
   region,
   selectionMode,
+  historicalMode,
   selectedPoint,
   onMapClick,
+  onProbeClick,
   onTerrainReady,
   onViewerReady,
 }: CesiumViewerProps) {
@@ -124,6 +128,47 @@ export default function CesiumViewer({
       }
     };
   }, [selectedPoint, viewer]);
+
+  // Click handler for snow depth probe in historical mode
+  useEffect(() => {
+    const v = viewer.current;
+    if (!v || !historicalMode || selectionMode) return;
+
+    const handler = new ScreenSpaceEventHandler(v.scene.canvas);
+    handler.setInputAction((event: { position: { x: number; y: number } }) => {
+      const ray = v.camera.getPickRay(event.position as any);
+      if (!ray) return;
+
+      const cartesian = v.scene.globe.pick(ray, v.scene);
+      if (!cartesian) {
+        const ellipsoidPos = v.camera.pickEllipsoid(event.position as any);
+        if (!ellipsoidPos) return;
+        const carto = Cartographic.fromCartesian(ellipsoidPos);
+        onProbeClick?.(
+          CesiumMath.toDegrees(carto.latitude),
+          CesiumMath.toDegrees(carto.longitude),
+          event.position.x,
+          event.position.y,
+        );
+        return;
+      }
+
+      const carto = Cartographic.fromCartesian(cartesian);
+      onProbeClick?.(
+        CesiumMath.toDegrees(carto.latitude),
+        CesiumMath.toDegrees(carto.longitude),
+        event.position.x,
+        event.position.y,
+      );
+    }, ScreenSpaceEventType.LEFT_CLICK);
+
+    v.canvas.style.cursor = "crosshair";
+
+    return () => {
+      handler.destroy();
+      if (v.canvas) v.canvas.style.cursor = "";
+    };
+  }, [historicalMode, selectionMode, viewer, onProbeClick]);
 
   return (
     <div
