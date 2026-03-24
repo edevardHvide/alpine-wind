@@ -17,8 +17,9 @@ Single-page React app with Web Worker computation (no backend for simulation):
 - **Wind Solver** — Mass-conserving diagnostic wind model with Winstral Sx terrain exposure
 - **Snow Model** — 2D saltation advection with Pomeroy-Gray physics
 - **Historical Simulation** — 12-day weather from NVE API (7 days history + 5 days forecast)
+- **Spatial Weather** — 9-station 3×3 grid with IDW interpolation, lapse rate, orographic precip
 - **Wind Canvas Layer** — Custom 2D canvas overlay (6000 desktop / 2000 mobile particles)
-- **Snow Overlay** — Canvas texture draped on terrain via SingleTileImageryProvider
+- **Snow Overlay** — `SnowOverlayManager` class with double-buffered imagery layers and crossfade
 
 ## Tech Stack
 
@@ -101,6 +102,32 @@ The raw Pomeroy flux is in physical units (tiny numbers). It MUST be normalized 
 ### IMPORTANT: Solver Stability
 
 The solver was unstable with neighbor-cell pressure corrections at speeds > 4 m/s (velocities diverged to 10^24). Fixed by switching to center-cell divergence absorption. **Do not revert to neighbor-correction scheme.**
+
+## Spatial Weather & Downscaling
+
+Weather is fetched from a 3×3 grid of NVE stations (9 points) across the terrain bounding box, then downscaled to the 75m terrain grid:
+
+- **IDW interpolation:** Inverse-distance-weighted blending from 9 stations per grid cell
+- **Lapse rate correction:** -6.5°C per 1000m elevation difference between terrain cell and IDW-weighted station altitude. This means valleys can get rain while peaks get snow at the same timestep.
+- **Orographic precipitation:** +8% per 100m above reference altitude (higher terrain gets more precip)
+- **Wind:** Domain-average across stations (terrain effects from wind solver already handle spatial variation)
+
+### IMPORTANT: Per-cell temperature check
+
+When passing per-cell snowfall arrays to `computeSnowAccumulation`, the global `params.temperature > 1` early return MUST be bypassed. The per-cell filtering already handles temperature (cells with temp > 0 get snowfall = 0). The global check would kill all snow when domain-average is above freezing, even if high-altitude cells are below freezing.
+
+## Snow Overlay Rendering
+
+`SnowOverlayManager` class in `snow-overlay.ts` handles smooth transitions:
+
+- **Double-buffering:** New imagery layer is added BEFORE old one is removed (no gap/blink)
+- **Crossfade:** 300ms cubic ease-out alpha transition between old and new layers
+- **Frame interpolation:** During adjacent-step playback, snow depth is lerped over 250ms via `renderInterpolated()`
+- **Scrubbing:** Non-adjacent jumps use instant crossfade (no interpolation delay)
+
+### IMPORTANT: Cesium imagery layer lifecycle
+
+Never call `removeSnowOverlay` before the new layer is ready. The async `SingleTileImageryProvider.fromUrl()` creates a gap between remove and add, causing visible blinking. Always add-then-remove (double-buffer pattern).
 
 ## Historical Simulation Mode
 
