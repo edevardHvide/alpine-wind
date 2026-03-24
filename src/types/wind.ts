@@ -8,6 +8,7 @@ export interface WindField {
   u: Float64Array; // east-west component (m/s)
   v: Float64Array; // north-south component (m/s)
   w: Float64Array; // vertical component (m/s)
+  exposure: Float64Array; // Winstral Sx per cell (positive=sheltered, negative=exposed)
   rows: number;
   cols: number;
   layers: number;

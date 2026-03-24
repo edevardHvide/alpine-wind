@@ -5,6 +5,7 @@ import {
 } from "cesium";
 import type { BoundingBox, ElevationGrid } from "../types/terrain.ts";
 import { gridDimensions, gridToLatLng } from "../utils/geo.ts";
+import { computeSx } from "./wind-solver.ts";
 
 const DEFAULT_CELL_SIZE = 75; // meters
 
@@ -44,12 +45,16 @@ export async function sampleTerrain(
 
   computeDerivatives(heights, rows, cols, cellSizeMeters, slopes, aspects, normalsX, normalsY, normalsZ);
 
+  // Precompute Sx for 8 azimuth sectors (every 45deg)
+  const sxSectors = precomputeSxSectors(heights, rows, cols, cellSizeMeters);
+
   console.log(
     `Terrain sampled: ${rows}x${cols} grid, cell=${cellSizeMeters}m, ` +
-    `height range: ${typedArrayMin(heights).toFixed(0)}-${typedArrayMax(heights).toFixed(0)}m`,
+    `height range: ${typedArrayMin(heights).toFixed(0)}-${typedArrayMax(heights).toFixed(0)}m, ` +
+    `Sx precomputed for 8 sectors`,
   );
 
-  return { heights, rows, cols, bbox, cellSizeMeters, slopes, aspects, normalsX, normalsY, normalsZ };
+  return { heights, rows, cols, bbox, cellSizeMeters, slopes, aspects, normalsX, normalsY, normalsZ, sxSectors };
 }
 
 function typedArrayMin(arr: Float64Array): number {
@@ -102,5 +107,27 @@ function computeDerivatives(
       nz[idx] = 1 / len;
     }
   }
+}
+
+function precomputeSxSectors(
+  heights: Float64Array,
+  rows: number,
+  cols: number,
+  cellSize: number,
+): Float64Array[] {
+  const sectors: Float64Array[] = [];
+  for (let s = 0; s < 8; s++) {
+    const dirRad = s * (Math.PI / 4);
+    const wdx = Math.sin(dirRad);
+    const wdy = Math.cos(dirRad);
+    const sx = new Float64Array(rows * cols);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        sx[r * cols + c] = computeSx(heights, r, c, rows, cols, wdx, wdy, cellSize);
+      }
+    }
+    sectors.push(sx);
+  }
+  return sectors;
 }
 

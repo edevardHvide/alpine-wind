@@ -69,7 +69,39 @@ export function solveWindField(
   const meanDir = (Math.atan2(-sumU, -sumV) * 180 / Math.PI + 360) % 360;
   console.log(`Wind solver: input=${params.direction}deg ${params.speed}m/s, output meanDir=${meanDir.toFixed(0)}deg, iters=${finalIter}, maxDiv=${finalDiv.toFixed(4)}, maxU=${maxU.toFixed(1)}, maxV=${maxV.toFixed(1)}`);
 
-  return { u, v, w, rows, cols, layers, layerHeights: LAYER_HEIGHTS };
+  // Compute Sx grid for snow model — use precomputed sectors if available
+  const windMag = Math.sqrt(baseU * baseU + baseV * baseV);
+  const exposure = new Float64Array(rows * cols);
+  if (windMag > 0.01) {
+    if (terrain.sxSectors && terrain.sxSectors.length === 8) {
+      // Interpolate between nearest two precomputed sectors
+      const windDirRad = Math.atan2(baseU, baseV); // wind FROM direction
+      const sectorWidth = Math.PI / 4;
+      // Normalize to [0, 2*PI)
+      const normDir = ((windDirRad % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      const sectorIdx = normDir / sectorWidth;
+      const s0 = Math.floor(sectorIdx) % 8;
+      const s1 = (s0 + 1) % 8;
+      const t = sectorIdx - Math.floor(sectorIdx);
+
+      const sx0 = terrain.sxSectors[s0];
+      const sx1 = terrain.sxSectors[s1];
+      for (let i = 0; i < rows * cols; i++) {
+        exposure[i] = sx0[i] * (1 - t) + sx1[i] * t;
+      }
+    } else {
+      // Fallback: compute from scratch
+      const wdx = baseU / windMag;
+      const wdy = baseV / windMag;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          exposure[r * cols + c] = computeSx(terrain.heights, r, c, rows, cols, wdx, wdy, terrain.cellSizeMeters);
+        }
+      }
+    }
+  }
+
+  return { u, v, w, exposure, rows, cols, layers, layerHeights: LAYER_HEIGHTS };
 }
 
 function applyTerrainEffects(
@@ -88,6 +120,29 @@ function applyTerrainEffects(
   const wdx = baseU / windMag;
   const wdy = baseV / windMag;
 
+  // Precompute Sx grid for terrain effects (use sectors if available)
+  const sxGrid = new Float64Array(rows * cols);
+  if (terrain.sxSectors && terrain.sxSectors.length === 8) {
+    const windDirRad = Math.atan2(baseU, baseV);
+    const sectorWidth = Math.PI / 4;
+    const normDir = ((windDirRad % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    const sectorIdx = normDir / sectorWidth;
+    const s0 = Math.floor(sectorIdx) % 8;
+    const s1 = (s0 + 1) % 8;
+    const t = sectorIdx - Math.floor(sectorIdx);
+    const sx0 = terrain.sxSectors[s0];
+    const sx1 = terrain.sxSectors[s1];
+    for (let i = 0; i < rows * cols; i++) {
+      sxGrid[i] = sx0[i] * (1 - t) + sx1[i] * t;
+    }
+  } else {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        sxGrid[r * cols + c] = computeSx(heights, r, c, rows, cols, wdx, wdy, terrain.cellSizeMeters);
+      }
+    }
+  }
+
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const gi = r * cols + c;
@@ -96,7 +151,7 @@ function applyTerrainEffects(
       const ny = normalsY[gi];
 
       const windwardness = wdx * nx + wdy * ny;
-      const exposure = computeExposure(heights, r, c, rows, cols, wdx, wdy, terrain.cellSizeMeters);
+      const sx = sxGrid[gi];
 
       for (let layer = 0; layer < layers; layer++) {
         const idx = layer * rows * cols + gi;
@@ -114,17 +169,20 @@ function applyTerrainEffects(
           v[idx] *= clamp(leeFactor, 0.3, 1);
         }
 
-        if (exposure > 0) {
-          const speedUp = 1 + 0.4 * exposure * heightFactor;
-          u[idx] *= clamp(speedUp, 1, 1.5);
-          v[idx] *= clamp(speedUp, 1, 1.5);
+        // Negative Sx = exposed ridge → speed up wind
+        if (sx < 0) {
+          const speedUp = 1 + 0.6 * Math.abs(sx) * 10 * heightFactor;
+          u[idx] *= clamp(speedUp, 1, 2.0);
+          v[idx] *= clamp(speedUp, 1, 2.0);
         }
       }
     }
   }
 }
 
-function computeExposure(
+// Winstral Sx: maximum upwind shelter angle
+// positive = sheltered (upwind terrain higher), negative = exposed ridge
+export function computeSx(
   heights: Float64Array,
   r: number,
   c: number,
@@ -133,22 +191,21 @@ function computeExposure(
   wdx: number,
   wdy: number,
   cellSize: number,
+  searchDist: number = 300,
 ): number {
-  const centerH = heights[r * cols + c];
-  let sumDiff = 0;
-  let count = 0;
+  const h0 = heights[r * cols + c];
+  const maxSteps = Math.ceil(searchDist / cellSize);
+  let maxAngle = -Infinity;
 
-  for (let dist = 1; dist <= 5; dist++) {
-    const sr = r - Math.round(wdy * dist);
-    const sc = c - Math.round(wdx * dist);
-    if (sr >= 0 && sr < rows && sc >= 0 && sc < cols) {
-      sumDiff += centerH - heights[sr * cols + sc];
-      count++;
-    }
+  for (let d = 1; d <= maxSteps; d++) {
+    const sr = r - Math.round(wdy * d);
+    const sc = c - Math.round(wdx * d);
+    if (sr < 0 || sr >= rows || sc < 0 || sc >= cols) break;
+    const dh = heights[sr * cols + sc] - h0;
+    maxAngle = Math.max(maxAngle, Math.atan2(dh, d * cellSize));
   }
 
-  if (count === 0) return 0;
-  return clamp(sumDiff / count / (cellSize * 2), -1, 1);
+  return maxAngle === -Infinity ? 0 : maxAngle;
 }
 
 function enforceMassConservation(

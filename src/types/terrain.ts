@@ -16,6 +16,7 @@ export interface ElevationGrid {
   normalsX: Float64Array;
   normalsY: Float64Array;
   normalsZ: Float64Array;
+  sxSectors?: Float64Array[]; // 8 precomputed Sx grids (every 45deg)
 }
 
 export interface TerrainRegion {

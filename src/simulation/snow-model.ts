@@ -3,12 +3,136 @@ import type { WindField, WindParams } from "../types/wind.ts";
 import type { SnowDepthGrid } from "../types/snow.ts";
 import { clamp, smoothstep } from "../utils/math.ts";
 
-const BASE_SNOWFALL_CM = 30; // default uniform snowfall in cm
-const SCOUR_THRESHOLD_MS = 8.3;
+const BASE_SNOWFALL_CM = 30;
+const KARMAN_DRAG_COEFF = 0.04;
 const POWDER_TEMP_MIN = -10;
 const POWDER_TEMP_MAX = -5;
 const SKIABLE_SLOPE_MIN = 25;
 const SKIABLE_SLOPE_MAX = 45;
+const ADVECTION_ITERATIONS = 12;
+
+// Li & Pomeroy 1997 — friction velocity threshold by temperature
+function thresholdFrictionVelocity(tempC: number): number {
+  if (tempC > 0) return 1.0;     // wet snow barely moves
+  if (tempC > -3) return 0.48;   // moist snow
+  if (tempC > -10) return 0.28;  // settled cold snow
+  return 0.16;                    // fresh dry powder
+}
+
+// 10m wind speed threshold (for powder detection)
+function thresholdWindSpeed(tempC: number): number {
+  if (tempC > 0) return 25;
+  if (tempC > -3) return 12;
+  if (tempC > -10) return 7;
+  return 4;
+}
+
+// 2D saltation advection: snow physically moves downwind from ridges to lee slopes
+function advectSaltation(
+  terrain: ElevationGrid,
+  wind: WindField,
+  params: WindParams,
+  snowfallCm: number,
+): Float64Array {
+  const { rows, cols, heights, slopes, cellSizeMeters } = terrain;
+  const n = rows * cols;
+
+  // Start with uniform snowfall on land
+  const snow = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    if (heights[i] >= 40) snow[i] = snowfallCm;
+  }
+
+  // No redistribution at calm wind
+  if (params.speed < 0.5) return snow;
+
+  const massInTransport = new Float64Array(n);
+  const uStarTh = thresholdFrictionVelocity(params.temperature);
+  const windStrength = smoothstep(0, 2, params.speed);
+
+  for (let iter = 0; iter < ADVECTION_ITERATIONS; iter++) {
+    // 1. Erosion & deposition per cell
+    for (let i = 0; i < n; i++) {
+      if (heights[i] < 40) continue;
+
+      const speed = Math.sqrt(wind.u[i] ** 2 + wind.v[i] ** 2);
+      const uStar = speed * KARMAN_DRAG_COEFF;
+
+      // Erosion: Pomeroy flux, fetch-limited (only erode when below equilibrium transport)
+      if (uStar > uStarTh && snow[i] > 0.1) {
+        const equilibrium = uStar * (uStar * uStar - uStarTh * uStarTh);
+        const deficit = Math.max(0, equilibrium - massInTransport[i]);
+        const eroded = Math.min(deficit * 0.25 * windStrength, snow[i] * 0.2);
+        snow[i] -= eroded;
+        massInTransport[i] += eroded;
+      }
+
+      // Deposition: in sheltered areas (positive Sx)
+      const sx = wind.exposure[i];
+      if (sx > 0.01 && massInTransport[i] > 0.01) {
+        const depRate = clamp(sx * 5, 0, 0.35);
+        const deposited = massInTransport[i] * depRate;
+        snow[i] += deposited;
+        massInTransport[i] -= deposited;
+      }
+
+      // Slope shedding: steep slopes shed deposited snow
+      const slopeDeg = slopes[i] * (180 / Math.PI);
+      if (slopeDeg > 40 && snow[i] > snowfallCm) {
+        const excess = (snow[i] - snowfallCm) * smoothstep(40, 55, slopeDeg) * 0.3;
+        snow[i] -= excess;
+        massInTransport[i] += excess * 0.5; // half re-enters transport, half lost
+      }
+    }
+
+    // 2. Advect transport mass downwind (first-order upwind scheme)
+    const newTransport = new Float64Array(n);
+    for (let r = 1; r < rows - 1; r++) {
+      for (let c = 1; c < cols - 1; c++) {
+        const i = r * cols + c;
+        if (massInTransport[i] < 0.001) continue;
+
+        const wu = wind.u[i];
+        const wv = wind.v[i];
+        const speed = Math.sqrt(wu * wu + wv * wv);
+        if (speed < 0.1) {
+          newTransport[i] += massInTransport[i];
+          continue;
+        }
+
+        const dt = cellSizeMeters / (speed + 1);
+        const courant = clamp(speed * dt / cellSizeMeters, 0, 0.9);
+
+        // Upwind source: where is transport coming FROM
+        const srcC = wu > 0 ? c - 1 : c + 1;
+        const srcR = wv > 0 ? r - 1 : r + 1;
+
+        if (srcC >= 0 && srcC < cols && srcR >= 0 && srcR < rows) {
+          const srcI = srcR * cols + srcC;
+          newTransport[i] += massInTransport[i] * (1 - courant)
+                          + massInTransport[srcI] * courant;
+        } else {
+          newTransport[i] += massInTransport[i];
+        }
+      }
+    }
+
+    // 3. Sublimation loss during transport (2-5% per iteration)
+    const sublimRate = clamp(0.02 + 0.003 * params.speed, 0, 0.05);
+    for (let i = 0; i < n; i++) {
+      newTransport[i] *= (1 - sublimRate);
+    }
+
+    massInTransport.set(newTransport);
+  }
+
+  // Deposit remaining transport mass
+  for (let i = 0; i < n; i++) {
+    snow[i] += massInTransport[i];
+  }
+
+  return snow;
+}
 
 export function computeSnowAccumulation(
   terrain: ElevationGrid,
@@ -16,105 +140,45 @@ export function computeSnowAccumulation(
   params: WindParams,
   snowfallCm = BASE_SNOWFALL_CM,
 ): SnowDepthGrid {
-  const { rows, cols, slopes, aspects, heights } = terrain;
-  const depth = new Float64Array(rows * cols);
-  const isPowderZone = new Uint8Array(rows * cols);
+  const { rows, cols, slopes, heights } = terrain;
+  const n = rows * cols;
+  const isPowderZone = new Uint8Array(n);
 
   // No snow above freezing
   if (params.temperature > 1) {
-    return { depth, isPowderZone, rows, cols };
+    return { depth: new Float64Array(n), isPowderZone, rows, cols };
   }
 
-  // Wind direction: where wind blows TO (for lee-side calc)
-  const windRadTo = ((params.direction + 180) % 360) * (Math.PI / 180);
+  // Advection-based redistribution
+  const depth = advectSaltation(terrain, wind, params, snowfallCm);
 
-  // Smooth ramp: how much wind affects redistribution (0 at calm, 1 at 2+ m/s)
-  const windStrength = smoothstep(0, 2, params.speed);
-
+  // Powder zone detection: powder survives in sheltered, low-wind areas
   const inPowderTemp = params.temperature >= POWDER_TEMP_MIN && params.temperature <= POWDER_TEMP_MAX;
+  if (inPowderTemp) {
+    for (let i = 0; i < n; i++) {
+      if (heights[i] < 40) continue;
+      const slopeDeg = slopes[i] * (180 / Math.PI);
+      const skiable = slopeDeg >= SKIABLE_SLOPE_MIN && slopeDeg <= SKIABLE_SLOPE_MAX;
+      if (!skiable) continue;
 
-  // Pass 1: compute redistribution factor per cell
-  // Factor > 1 = accumulation (lee sides), < 1 = scouring (windward/ridges)
-  // At 0 wind, all factors → 1.0 (uniform snow)
-  const factors = new Float64Array(rows * cols);
-  let factorSum = 0;
+      const surfaceSpeed = Math.sqrt(wind.u[i] ** 2 + wind.v[i] ** 2);
+      const isWindLoaded = depth[i] > snowfallCm * 1.15; // received significant deposition
+      const isLowWind = surfaceSpeed < thresholdWindSpeed(params.temperature) * 0.7;
 
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const gi = r * cols + c;
-
-      // Skip water
-      if (heights[gi] < 40) {
-        factors[gi] = 0;
-        continue;
-      }
-
-      const su = wind.u[gi];
-      const sv = wind.v[gi];
-      const surfaceSpeed = Math.sqrt(su * su + sv * sv);
-
-      // Wind scouring: ramps in with windStrength (no scouring at 0 wind)
-      const scourFactor = 1 - clamp(surfaceSpeed / SCOUR_THRESHOLD_MS, 0, 0.8) * windStrength;
-
-      // Lee-side deposition: naturally → 1 at 0 wind (surfaceSpeed=0 → windInfluence=0)
-      const aspectDiff = Math.cos(aspects[gi] - windRadTo);
-      const windInfluence = clamp(surfaceSpeed / 2, 0, 1);
-      const leeFactor = 1 + clamp(aspectDiff, 0, 1) * 0.8 * windInfluence;
-
-      // Slope shedding: steep slopes lose snow (gravity, applies at all wind speeds)
-      const slopeDeg = slopes[gi] * (180 / Math.PI);
-      const slopeFactor = 1 - smoothstep(35, 55, slopeDeg) * 0.7 * windStrength;
-
-      // Combined redistribution factor
-      const factor = scourFactor * leeFactor * slopeFactor;
-      factors[gi] = factor;
-      factorSum += factor;
-    }
-  }
-
-  // Pass 2: normalize so total snow is conserved (mass conservation)
-  let landCells = 0;
-  for (let i = 0; i < factors.length; i++) {
-    if (factors[i] > 0) landCells++;
-  }
-
-  const targetTotal = snowfallCm * landCells;
-  const scale = factorSum > 0 ? targetTotal / factorSum : 1;
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const gi = r * cols + c;
-      if (factors[gi] === 0) continue;
-
-      depth[gi] = clamp(factors[gi] * scale, 0, snowfallCm * 3);
-
-      // Powder: fresh cold snow IS powder. Wind REMOVES it from exposed areas.
-      // At 0 wind: all skiable cells are powder. As wind increases, exposed
-      // areas lose powder while sheltered lee slopes retain it.
-      if (inPowderTemp) {
-        const slopeDeg = slopes[gi] * (180 / Math.PI);
-        const skiable = slopeDeg >= SKIABLE_SLOPE_MIN && slopeDeg <= SKIABLE_SLOPE_MAX;
-        if (skiable) {
-          const su = wind.u[gi];
-          const sv = wind.v[gi];
-          const surfaceSpeed = Math.sqrt(su * su + sv * sv);
-          const aspectDiff = Math.cos(aspects[gi] - windRadTo);
-
-          const exposure = clamp(surfaceSpeed / SCOUR_THRESHOLD_MS, 0, 1) * windStrength;
-          const sheltering = clamp(aspectDiff, 0, 1); // 1 = lee, 0 = windward
-          const powderSurvival = 1 - exposure * (1 - sheltering * 0.7);
-
-          if (powderSurvival > 0.5) {
-            isPowderZone[gi] = 1;
-          }
-        }
+      if (isLowWind && !isWindLoaded) {
+        isPowderZone[i] = 1;
       }
     }
   }
 
-  let minD = Infinity, maxD = -Infinity;
-  for (let i = 0; i < depth.length; i++) { if (depth[i] < minD) minD = depth[i]; if (depth[i] > maxD) maxD = depth[i]; }
-  console.log(`Snow model: ${snowfallCm}cm base, ${landCells} land cells, windStrength=${windStrength.toFixed(2)}, depth range: ${minD.toFixed(0)}-${maxD.toFixed(0)}cm`);
+  let minD = Infinity, maxD = -Infinity, landCells = 0;
+  for (let i = 0; i < n; i++) {
+    if (heights[i] < 40) continue;
+    landCells++;
+    if (depth[i] < minD) minD = depth[i];
+    if (depth[i] > maxD) maxD = depth[i];
+  }
+  console.log(`Snow model: ${snowfallCm}cm base, ${landCells} land cells, depth range: ${minD.toFixed(1)}-${maxD.toFixed(1)}cm`);
 
   return { depth, isPowderZone, rows, cols };
 }
