@@ -42,7 +42,6 @@ export default function CesiumViewer({
   region,
   selectionMode,
   historicalMode,
-  selectedPoint,
   searchedMountain,
   onMapClick,
   onProbeClick,
@@ -52,7 +51,6 @@ export default function CesiumViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const { viewer, terrainProvider, ready } = useCesium(containerRef, region);
   const sampledRegionRef = useRef<string>("");
-  const markerRef = useRef<Entity | null>(null);
   const mountainMarkerRef = useRef<Entity | null>(null);
 
   // Expose viewer instance
@@ -108,36 +106,6 @@ export default function CesiumViewer({
     };
   }, [selectionMode, viewer, onMapClick]);
 
-  // Marker entity for selected point
-  useEffect(() => {
-    const v = viewer.current;
-    if (!v) return;
-
-    // Remove old marker
-    if (markerRef.current) {
-      v.entities.remove(markerRef.current);
-      markerRef.current = null;
-    }
-
-    if (selectedPoint) {
-      markerRef.current = v.entities.add({
-        position: Cartesian3.fromDegrees(selectedPoint.lng, selectedPoint.lat, 100),
-        point: {
-          pixelSize: 14,
-          color: Color.YELLOW,
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-        },
-      });
-    }
-
-    return () => {
-      if (markerRef.current && v.entities.contains(markerRef.current)) {
-        v.entities.remove(markerRef.current);
-        markerRef.current = null;
-      }
-    };
-  }, [selectedPoint, viewer]);
 
   // Mountain arrow marker with name label
   useEffect(() => {
