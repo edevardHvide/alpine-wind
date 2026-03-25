@@ -8,7 +8,7 @@ import ScaleBar from "./components/ScaleBar.tsx";
 import TimelineBar from "./components/TimelineBar.tsx";
 import WelcomePage from "./components/WelcomePage.tsx";
 import { REGIONS, regionFromCoordinates } from "./simulation/regions.ts";
-import type { MountainResult } from "./api/kartverket.ts";
+import type { PlaceResult } from "./api/kartverket.ts";
 import { fetchSpatialWeather, type SpatialWeatherTimeSeries } from "./api/nve.ts";
 import { useSimulation } from "./hooks/useSimulation.ts";
 import { useHistoricalSim } from "./hooks/useHistoricalSim.ts";
@@ -485,7 +485,7 @@ export default function App() {
         historicalLoading={historicalSim.loading}
         selectionMode={selectionMode}
         onParamsChange={setParams}
-        onMountainSelect={(m: MountainResult) => {
+        onMountainSelect={(m: PlaceResult) => {
           if (selectionMode) {
             setSelectedPoint({ lat: m.lat, lng: m.lng, name: m.name });
             setShowConfirmDialog(true);

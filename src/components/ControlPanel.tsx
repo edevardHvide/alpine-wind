@@ -1,7 +1,7 @@
 import { useState } from "react";
 import WindCompass from "./WindCompass.tsx";
-import MountainSearch from "./MountainSearch.tsx";
-import type { MountainResult } from "../api/kartverket.ts";
+import PlaceSearch from "./PlaceSearch.tsx";
+import type { PlaceResult } from "../api/kartverket.ts";
 import type { WindParams } from "../types/wind.ts";
 
 interface ControlPanelProps {
@@ -12,7 +12,7 @@ interface ControlPanelProps {
   historicalLoading: boolean;
   selectionMode: boolean;
   onParamsChange: (p: WindParams) => void;
-  onMountainSelect: (m: MountainResult) => void;
+  onMountainSelect: (m: PlaceResult) => void;
   onToggleSnow: () => void;
   onToggleWind: () => void;
   onHistoricalMode: () => void;
@@ -35,9 +35,9 @@ export default function ControlPanel({
 
   // Shared search state between mobile floating bar and desktop panel
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<MountainResult[]>([]);
+  const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
 
-  const handleMountainSelect = (m: MountainResult) => {
+  const handleMountainSelect = (m: PlaceResult) => {
     onMountainSelect(m);
     setMobileOpen(false);
   };
@@ -64,7 +64,7 @@ export default function ControlPanel({
               </svg>
             </div>
             <div className="flex-1">
-              <MountainSearch {...searchProps} mobile />
+              <PlaceSearch {...searchProps} mobile />
             </div>
           </div>
           <button
@@ -129,7 +129,7 @@ export default function ControlPanel({
         <div className="h-px bg-gradient-to-r from-slate-600/60 via-slate-500/30 to-transparent" />
 
         {/* Search — always visible in drawer on mobile, always in panel on desktop */}
-        <MountainSearch {...searchProps} />
+        <PlaceSearch {...searchProps} />
 
         {!historicalMode && (
           <>

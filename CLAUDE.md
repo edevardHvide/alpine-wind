@@ -26,7 +26,7 @@ Single-page React app with Web Worker computation (no backend for simulation):
 - **Frontend:** React 19, TypeScript 5.9, Vite 8, Tailwind CSS 4
 - **3D:** CesiumJS 1.139 + vite-plugin-cesium
 - **Weather API:** NVE GridTimeSeries (proxied through Vite dev server to avoid CORS)
-- **Search:** Kartverket Stedsnavn API (mountain search)
+- **Search:** Kartverket Stedsnavn API (all place types in Norway)
 - **Runs locally** — `npm run dev` on http://localhost:5173
 
 ## Project Structure
@@ -34,13 +34,13 @@ Single-page React app with Web Worker computation (no backend for simulation):
 ```
 src/
   components/        CesiumViewer, ControlPanel, WindCompass, SnowLegend,
-                     TimelineBar, MountainSearch, SnowDepthTooltip, MapCompass,
+                     TimelineBar, PlaceSearch, SnowDepthTooltip, MapCompass,
                      ScaleBar, WelcomePage
   simulation/        wind-solver, snow-model, terrain-sampler, terrain-processing,
                      regions, historical-sim, simulation.worker, worker-protocol
   rendering/         wind-layer-adapter, snow-overlay, color-scales
   hooks/             useCesium, useSimulation, useHistoricalSim, useAnimationLoop
-  api/               nve (weather), kartverket (mountain search)
+  api/               nve (weather), kartverket (place search)
   utils/             geo, math, device
   types/             wind, terrain, snow
 ```

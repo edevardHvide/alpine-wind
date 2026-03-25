@@ -1,8 +1,6 @@
 const API_BASE = "https://ws.geonorge.no/stedsnavn/v1/sted";
-// API uses navneobjekttypekode (lowercase), not display names
-const MOUNTAIN_TYPES = ["fjell", "topp", "berg", "egg", "fjellområde", "isbre"];
 
-export interface MountainResult {
+export interface PlaceResult {
   name: string;
   type: string;
   municipality: string;
@@ -10,15 +8,12 @@ export interface MountainResult {
   lng: number;
 }
 
-export async function searchMountains(query: string): Promise<MountainResult[]> {
+export async function searchPlaces(query: string): Promise<PlaceResult[]> {
   if (query.length < 2) return [];
 
   // Append wildcard so partial names match (e.g. "Troll" → "Trolltinden")
   const sok = query.endsWith("*") ? query : `${query}*`;
   const params = new URLSearchParams({ sok, treffPerSide: "10" });
-  for (const t of MOUNTAIN_TYPES) {
-    params.append("navneobjekttype", t);
-  }
 
   try {
     const res = await fetch(`${API_BASE}?${params}`);
