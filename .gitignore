@@ -13,6 +13,7 @@ dist-ssr
 *.local
 .env
 .claude-flow/
+test-results/
 screenshot-*.png
 
 # Editor directories and files

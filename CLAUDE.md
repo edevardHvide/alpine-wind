@@ -124,10 +124,17 @@ When passing per-cell snowfall arrays to `computeSnowAccumulation`, the global `
 - **Crossfade:** 300ms cubic ease-out alpha transition between old and new layers
 - **Frame interpolation:** During adjacent-step playback, snow depth is lerped over 250ms via `renderInterpolated()`
 - **Scrubbing:** Non-adjacent jumps use instant crossfade (no interpolation delay)
+- **Render generation counter:** `renderGen` increments per render call; stale async renders are discarded after `fromUrl()` resolves
+- **Deferred removal:** `renderInterpolated()` defers old layer removal by 1 frame via `requestAnimationFrame` so Cesium composites the new tile first
+- **Stable color stats:** `computeColorStats()` precomputes mean/spread from the TARGET step once per transition, passed to all interpolation frames to prevent color shimmer
 
 ### IMPORTANT: Cesium imagery layer lifecycle
 
 Never call `removeSnowOverlay` before the new layer is ready. The async `SingleTileImageryProvider.fromUrl()` creates a gap between remove and add, causing visible blinking. Always add-then-remove (double-buffer pattern).
+
+### IMPORTANT: Async renders in RAF loops
+
+`renderInterpolated()` is async (awaits `SingleTileImageryProvider.fromUrl()`). The RAF animation loop MUST `await` each call before scheduling the next frame. Without this, multiple overlapping async renders race and resolve out-of-order, adding/removing Cesium layers chaotically and causing flicker.
 
 ## Historical Simulation Mode
 
