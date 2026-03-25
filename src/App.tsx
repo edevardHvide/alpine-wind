@@ -587,7 +587,7 @@ export default function App() {
         <span>v{__APP_VERSION__}</span>
         <span className="text-slate-600">·</span>
         <a
-          href={`https://github.com/edevardHvide/alpine-wind/issues/new?labels=feature-request&template=feature_request.md&title=%5BFeature%5D+`}
+          href={`https://github.com/edevardHvide/pow-predictor/issues/new?labels=feature-request&template=feature_request.md&title=%5BFeature%5D+`}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-slate-400 hover:text-sky-400 transition-colors"
