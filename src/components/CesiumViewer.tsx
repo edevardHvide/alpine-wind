@@ -24,7 +24,7 @@ import type { ElevationGrid } from "../types/terrain.ts";
 
 Ion.defaultAccessToken =
   import.meta.env.VITE_CESIUM_ION_TOKEN ??
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJkZWZhdWx0IiwiaWQiOjEsImlhdCI6MTY5MDAwMDAwMH0.demo";
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI3NjVjM2EyZS0xNTMwLTRjNWUtYWQ0Mi1hOTFlMDljYjM1YjMiLCJpZCI6NDA4OTgxLCJpYXQiOjE3NzQ0NDI5Njd9.fZTR8dTxON1hZ-C8Jw-GuoQE89RN2CGIDmXxpheol1c";
 
 interface CesiumViewerProps {
   region: TerrainRegion;

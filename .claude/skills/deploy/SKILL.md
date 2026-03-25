@@ -15,7 +15,7 @@ Build the Vite app and deploy to S3 with CloudFront cache invalidation.
 - **Domain:** `https://d1y1xbjzzgjck0.cloudfront.net`
 - **NVE Proxy API:** `https://1uv0uf8m0g.execute-api.eu-north-1.amazonaws.com` (API Gateway + Lambda)
 - **Region:** `eu-north-1`
-- **AWS Profile:** `tennis-bot`
+- **AWS Profile:** `pow-predictor`
 
 ## Steps
 
@@ -32,7 +32,7 @@ Verify the build succeeds (TypeScript + Vite). Output goes to `dist/`.
 ```bash
 aws s3 sync dist/ s3://pow-predictor-frontend \
   --delete \
-  --profile tennis-bot \
+  --profile pow-predictor \
   --region eu-north-1
 ```
 
@@ -44,7 +44,7 @@ The `--delete` flag removes files from S3 that are no longer in `dist/`.
 aws cloudfront create-invalidation \
   --distribution-id E1FX2FUC1H43O2 \
   --paths "/*" \
-  --profile tennis-bot \
+  --profile pow-predictor \
   --query 'Invalidation.Status' --output text
 ```
 
@@ -54,9 +54,18 @@ Report the deployment URL: `https://d1y1xbjzzgjck0.cloudfront.net`
 
 Note: CloudFront invalidation takes 1-2 minutes to propagate. The site will show old content until propagation completes.
 
+### 5. Update README if needed
+
+If features were added or changed, update `README.md` to reflect the current state. Key sections to check:
+- Features list
+- Weather data sources
+- Tech stack
+- Usage instructions
+
 ## Important
 
 - Always run from the alpine-wind project root
 - The build requires `VITE_CESIUM_ION_TOKEN` env var for production Cesium access (falls back to demo token if not set)
 - Cesium assets are ~12MB — S3 sync may take 30-60 seconds
 - Do NOT change the `--delete` flag — it keeps S3 clean
+- The app is a PWA — after deploy, users may need to clear cache or reinstall from home screen to get updates
