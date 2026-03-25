@@ -18,6 +18,10 @@ html, body, #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  background: #0f172a;
+  position: fixed;
+  inset: 0;
+  touch-action: manipulation;
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -90,6 +94,16 @@ button, select {
 /* Safe area support for notched devices */
 .safe-area-bottom {
   padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
+}
+
+/* Standalone PWA: UI overlays respect safe areas, map fills edge-to-edge */
+@media (display-mode: standalone) {
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-bottom {
+    padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
+  }
 }
 
 /* Hide scrollbar utility */

@@ -181,10 +181,11 @@ export default function CesiumViewer({
         },
         label: {
           text: searchedMountain.name,
-          font: "600 13px Outfit, sans-serif",
+          font: "600 52px Outfit, sans-serif",
+          scale: 0.25,
           fillColor: Color.WHITE,
           outlineColor: new Color(0.06, 0.09, 0.16, 0.9),
-          outlineWidth: 4,
+          outlineWidth: 16,
           style: LabelStyle.FILL_AND_OUTLINE,
           verticalOrigin: VerticalOrigin.BOTTOM,
           horizontalOrigin: HorizontalOrigin.CENTER,

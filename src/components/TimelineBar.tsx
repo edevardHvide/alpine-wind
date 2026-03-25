@@ -48,25 +48,34 @@ export default function TimelineBar({ steps, currentStep, onStepChange, onExit }
           <div className="flex items-center gap-1 md:gap-1.5 shrink-0">
             <button
               onClick={() => onStepChange(Math.max(0, currentStep - 1))}
-              className="w-8 h-8 flex items-center justify-center text-xs bg-slate-700/60 hover:bg-slate-600/70 text-slate-300 rounded-full"
+              className="w-8 h-8 flex items-center justify-center bg-slate-700/60 hover:bg-slate-600/70 rounded-full"
             >
-              ◀
+              <svg width="10" height="12" viewBox="0 0 24 24" fill="#cbd5e1"><path d="M18 20.5L4 12L18 3.5V20.5Z" /></svg>
             </button>
             <button
               onClick={() => setPlaying(!playing)}
-              className={`w-9 h-9 flex items-center justify-center text-sm font-semibold rounded-full shadow-lg ${
+              className={`w-9 h-9 flex items-center justify-center rounded-full shadow-lg ${
                 playing
-                  ? "bg-amber-500/90 text-slate-900 shadow-amber-900/30"
-                  : "bg-sky-500/90 hover:bg-sky-400/90 text-white shadow-sky-900/30"
+                  ? "bg-amber-500/90 shadow-amber-900/30"
+                  : "bg-sky-500/90 hover:bg-sky-400/90 shadow-sky-900/30"
               }`}
             >
-              {playing ? "⏸" : "▶"}
+              {playing ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill={playing ? "#1e293b" : "white"}>
+                  <rect x="5" y="3" width="5" height="18" rx="1" />
+                  <rect x="14" y="3" width="5" height="18" rx="1" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                  <path d="M6 3.5L20 12L6 20.5V3.5Z" />
+                </svg>
+              )}
             </button>
             <button
               onClick={() => onStepChange(Math.min(steps.length - 1, currentStep + 1))}
-              className="w-8 h-8 flex items-center justify-center text-xs bg-slate-700/60 hover:bg-slate-600/70 text-slate-300 rounded-full"
+              className="w-8 h-8 flex items-center justify-center bg-slate-700/60 hover:bg-slate-600/70 rounded-full"
             >
-              ▶
+              <svg width="10" height="12" viewBox="0 0 24 24" fill="#cbd5e1"><path d="M6 3.5L20 12L6 20.5V3.5Z" /></svg>
             </button>
             <select
               value={speed}

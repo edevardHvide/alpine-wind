@@ -533,7 +533,7 @@ export default function App() {
       {/* Confirm dialog */}
       {showConfirmDialog && selectedPoint && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/50 backdrop-blur-[2px]" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-          <div className="glass-panel p-5 md:p-6 text-white max-w-sm mx-3 md:mx-0">
+          <div className="glass-panel p-5 md:p-6 text-white max-w-sm mx-5 md:mx-0">
             <p className="text-sm text-slate-300 font-light mb-1">Simulate historical weather at:</p>
             <p className="font-semibold text-emerald-400 mb-4 text-lg" style={{ fontFamily: "var(--font-display)" }}>{selectedPoint.name}</p>
             <p className="text-xs text-slate-400 font-light mb-5">Fetches 7 days of history + 5 days of forecast from NVE and runs a time-stepped snow simulation.</p>
