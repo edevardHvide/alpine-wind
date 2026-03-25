@@ -128,6 +128,28 @@ export class SnowOverlayManager {
     const rawCtx = raw.getContext("2d")!;
     const imageData = rawCtx.createImageData(snow.cols, snow.rows);
 
+    // For historical mode, compute mean and spread for relative coloring
+    let meanDepth = 0;
+    let spreadDepth = 15;
+    if (mode === "historical") {
+      let sum = 0, count = 0;
+      for (let i = 0; i < snow.rows * snow.cols; i++) {
+        if (terrain.heights[i] >= 40 && snow.depth[i] > 0.5) {
+          sum += snow.depth[i];
+          count++;
+        }
+      }
+      meanDepth = count > 0 ? sum / count : 0;
+      // Spread = max absolute deviation from mean (clamped to reasonable range)
+      let maxDev = 0;
+      for (let i = 0; i < snow.rows * snow.cols; i++) {
+        if (terrain.heights[i] >= 40 && snow.depth[i] > 0.5) {
+          maxDev = Math.max(maxDev, Math.abs(snow.depth[i] - meanDepth));
+        }
+      }
+      spreadDepth = Math.max(maxDev, 3); // at least 3cm spread to avoid div issues
+    }
+
     for (let r = 0; r < snow.rows; r++) {
       const canvasRow = snow.rows - 1 - r;
       for (let c = 0; c < snow.cols; c++) {
@@ -141,7 +163,7 @@ export class SnowOverlayManager {
 
         const [red, green, blue, alpha] =
           mode === "historical"
-            ? historicalSnowColor(snow.depth[gi])
+            ? historicalSnowColor(snow.depth[gi], meanDepth, spreadDepth)
             : snowDepthColor(snow.depth[gi], snow.isPowderZone[gi] === 1);
         imageData.data[pi] = red;
         imageData.data[pi + 1] = green;
