@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import CesiumViewer from "./components/CesiumViewer.tsx";
+import CesiumErrorBoundary from "./components/CesiumErrorBoundary.tsx";
 import ControlPanel from "./components/ControlPanel.tsx";
 import SnowLegend from "./components/SnowLegend.tsx";
 import SnowDepthTooltip from "./components/SnowDepthTooltip.tsx";
@@ -459,20 +460,22 @@ export default function App() {
   return (
     <div className="relative w-full h-full">
       <WelcomePage />
-      <CesiumViewer
-        region={region}
-        selectionMode={selectionMode}
-        historicalMode={historicalMode}
-        selectedPoint={selectedPoint}
-        searchedMountain={searchedMountain}
-        onMapClick={handleMapClick}
-        onProbeClick={handleProbeClick}
-        onTerrainReady={handleTerrainReady}
-        onViewerReady={(v: Viewer) => {
-          viewerRef.current = v;
-          setCesiumViewer(v);
-        }}
-      />
+      <CesiumErrorBoundary>
+        <CesiumViewer
+          region={region}
+          selectionMode={selectionMode}
+          historicalMode={historicalMode}
+          selectedPoint={selectedPoint}
+          searchedMountain={searchedMountain}
+          onMapClick={handleMapClick}
+          onProbeClick={handleProbeClick}
+          onTerrainReady={handleTerrainReady}
+          onViewerReady={(v: Viewer) => {
+            viewerRef.current = v;
+            setCesiumViewer(v);
+          }}
+        />
+      </CesiumErrorBoundary>
 
       <MapCompass viewer={cesiumViewer} />
       <ScaleBar viewer={cesiumViewer} />
