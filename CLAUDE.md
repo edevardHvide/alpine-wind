@@ -6,7 +6,7 @@
 
 **Goal:** Help users find the best powder snow by simulating wind-driven snow transport and deposition.
 
-**Repo:** https://github.com/edevardHvide/alpine-wind
+**Repo:** https://github.com/edevardHvide/pow-predictor
 
 ## Architecture
 

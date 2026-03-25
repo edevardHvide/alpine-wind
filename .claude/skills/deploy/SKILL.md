@@ -22,7 +22,7 @@ Build the Vite app and deploy to S3 with CloudFront cache invalidation.
 ### 1. Build
 
 ```bash
-cd /Users/edevard/alpine-wind && npm run build
+cd /Users/edevard/pow-predictor && npm run build
 ```
 
 Verify the build succeeds (TypeScript + Vite). Output goes to `dist/`.
@@ -64,7 +64,7 @@ If features were added or changed, update `README.md` to reflect the current sta
 
 ## Important
 
-- Always run from the alpine-wind project root
+- Always run from the pow-predictor project root
 - The build requires `VITE_CESIUM_ION_TOKEN` env var for production Cesium access (falls back to demo token if not set)
 - Cesium assets are ~12MB — S3 sync may take 30-60 seconds
 - Do NOT change the `--delete` flag — it keeps S3 clean

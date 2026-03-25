@@ -137,3 +137,9 @@ button, select {
     user-select: none;
   }
 }
+
+/* Feedback modal entrance */
+@keyframes feedbackSlideIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

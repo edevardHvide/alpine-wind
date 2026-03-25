@@ -585,23 +585,6 @@ export default function App() {
 
       {showSnow && (state.snowGrid || historicalMode) && <SnowLegend mode={historicalMode ? "historical" : "manual"} />}
 
-      {/* Version + Feedback */}
-      <div className="absolute bottom-2 right-2 z-10 flex items-center gap-2 text-[10px] text-slate-500 font-light">
-        <span>v{__APP_VERSION__}</span>
-        <span className="text-slate-600">·</span>
-        <a
-          href={`https://github.com/edevardHvide/pow-predictor/issues/new?labels=feature-request&template=feature_request.md&title=%5BFeature%5D+`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-slate-400 hover:text-sky-400 transition-colors"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-          </svg>
-          Feedback
-        </a>
-      </div>
-
       {depthProbe && (
         <SnowDepthTooltip
           depthCm={depthProbe.depthCm}

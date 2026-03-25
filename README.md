@@ -94,8 +94,8 @@ This is a browser-based educational tool, not a forecasting system. Key simplifi
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/edevardHvide/alpine-wind.git
-cd alpine-wind
+git clone https://github.com/edevardHvide/pow-predictor.git
+cd pow-predictor
 
 # 2. Install dependencies
 npm install

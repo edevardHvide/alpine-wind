@@ -5,7 +5,7 @@
 import type { WeatherStation } from "./nve.ts";
 
 const MET_API = "https://api.met.no/weatherapi/locationforecast/2.0/compact";
-const USER_AGENT = "alpine-wind/1.0 github.com/edevardHvide/alpine-wind";
+const USER_AGENT = "pow-predictor/1.0 github.com/edevardHvide/pow-predictor";
 
 interface MetTimeseries {
   time: string;

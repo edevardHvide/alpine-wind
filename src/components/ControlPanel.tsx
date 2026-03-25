@@ -1,6 +1,7 @@
 import { useState } from "react";
 import WindCompass from "./WindCompass.tsx";
 import PlaceSearch from "./PlaceSearch.tsx";
+import FeedbackModal from "./FeedbackModal.tsx";
 import type { PlaceResult } from "../api/kartverket.ts";
 import type { WindParams } from "../types/wind.ts";
 
@@ -32,6 +33,7 @@ export default function ControlPanel({
   onHistoricalMode,
 }: ControlPanelProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   // Shared search state between mobile floating bar and desktop panel
   const [searchQuery, setSearchQuery] = useState("");
@@ -186,7 +188,23 @@ export default function ControlPanel({
             Snow {showSnow ? "ON" : "OFF"}
           </button>
         </div>
+
+        {/* Feedback + version */}
+        <div className="flex items-center justify-between pt-1">
+          <button
+            onClick={() => setFeedbackOpen(true)}
+            className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-sky-400 transition-colors"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+            </svg>
+            Feedback
+          </button>
+          <span className="text-[10px] text-slate-600 font-light">v{__APP_VERSION__}</span>
+        </div>
       </div>
+
+      <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </>
   );
 }
