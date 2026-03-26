@@ -93,9 +93,9 @@ export default function WelcomePage() {
 
           {/* Description */}
           <p className="text-sm sm:text-[15px] text-slate-300 font-light leading-relaxed mb-4 sm:mb-6">
-            Predict where powder accumulates after storms. This simulator models how
-            wind transports snow through mountain terrain — scouring exposed ridges
-            and depositing on sheltered lee slopes — using real physics and weather data.
+            Find the best powder snow in Norwegian mountains. Uses real weather data
+            from NVE and MET Norway to simulate how wind transports snow — scouring
+            ridges and depositing on lee slopes — with physically-based snow physics.
           </p>
 
           {/* How to use — two modes */}
@@ -125,8 +125,9 @@ export default function WelcomePage() {
                 <span className="text-[10px] text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded-full ml-auto">default</span>
               </div>
               <p className="text-xs text-slate-400 font-light leading-relaxed pl-[34px]">
-                Click anywhere on the terrain to see current weather conditions
-                and analyze field observations. Adjust wind direction, speed, and
+                Click anywhere to see live weather with conditions emoji.
+                Tap <span className="text-slate-300">Analyze with RegObs + AI</span> for
+                field observations and AI-powered snow analysis. Adjust wind and
                 temperature to see snow redistribute in real time.
               </p>
             </div>
@@ -149,10 +150,10 @@ export default function WelcomePage() {
                 <span className="text-sm font-medium text-emerald-200">Simulation Mode</span>
               </div>
               <p className="text-xs text-slate-400 font-light leading-relaxed pl-[34px]">
-                Click <span className="text-slate-300">Simulation Mode</span> in the control panel,
-                then pick a mountain on the map or search by name. Runs a 12-day weather
-                simulation (7 days history + 5 forecast) with a playable timeline.
-                Click anywhere on the map during playback to probe snow depth.
+                Search a mountain and tap <span className="text-slate-300">Simulate</span>.
+                Runs a 12-day simulation (7 days history + 5 forecast) using NVE
+                and MET weather data with a playable timeline. Click anywhere
+                during playback to probe predicted snow depth.
               </p>
             </div>
           </div>
@@ -161,15 +162,15 @@ export default function WelcomePage() {
           <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-6 sm:mb-8 text-[11px] text-slate-500 font-light">
             <span className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full bg-sky-500/50 inline-block" />
-              Search any Norwegian mountain
+              Search any place in Norway
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full bg-amber-500/50 inline-block" />
-              Cyan→yellow→red = wind speed
+              Live weather + RegObs field data
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full bg-emerald-500/50 inline-block" />
-              Click compass to reset north
+              Wind particles show speed & direction
             </span>
           </div>
 
