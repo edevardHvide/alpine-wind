@@ -75,7 +75,7 @@ export default function CesiumViewer({
   // Click handler — always active (selection mode uses crosshair cursor)
   useEffect(() => {
     const v = viewer.current;
-    if (!v || historicalMode) return;
+    if (!v || historicalMode || !selectionMode) return;
 
     const handler = new ScreenSpaceEventHandler(v.scene.canvas);
     handler.setInputAction((event: { position: { x: number; y: number } }) => {
@@ -95,7 +95,7 @@ export default function CesiumViewer({
       onMapClick?.(CesiumMath.toDegrees(carto.latitude), CesiumMath.toDegrees(carto.longitude));
     }, ScreenSpaceEventType.LEFT_CLICK);
 
-    if (selectionMode) v.canvas.style.cursor = "crosshair";
+    v.canvas.style.cursor = "crosshair";
 
     return () => {
       handler.destroy();
