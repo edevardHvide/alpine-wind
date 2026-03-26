@@ -17,7 +17,7 @@ import { computeCellAspectSlope, scoreAndFilterObservations } from "./utils/rele
 import type { ConditionsSummary, TerrainPoint } from "./types/conditions.ts";
 import { useSimulation } from "./hooks/useSimulation.ts";
 import { useHistoricalSim } from "./hooks/useHistoricalSim.ts";
-import { renderSnowOverlay, removeSnowOverlay, SnowOverlayManager, computeColorStats } from "./rendering/snow-overlay.ts";
+import { renderSnowOverlay, removeSnowOverlay, SnowOverlayManager } from "./rendering/snow-overlay.ts";
 import { WindCanvasLayer } from "./rendering/wind-layer-adapter.ts";
 import { isMobileDevice, MOBILE_PARTICLE_COUNT, DESKTOP_PARTICLE_COUNT } from "./utils/device.ts";
 import type { WindParams } from "./types/wind.ts";
@@ -207,8 +207,7 @@ export default function App() {
     };
   }, [state.snowGrid, showSnow, historicalMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Historical mode: render current step with smooth interpolation
-  const interpRaf = useRef<number | null>(null);
+  // Historical mode: render current step with pre-rendered crossfade
   const lastRenderedStep = useRef(-1);
 
   useEffect(() => {
@@ -219,12 +218,6 @@ export default function App() {
     const viewer = viewerRef.current;
     const terrain = terrainRef.current;
     if (!viewer || !terrain) return;
-
-    // Cancel any in-flight interpolation
-    if (interpRaf.current !== null) {
-      cancelAnimationFrame(interpRaf.current);
-      interpRaf.current = null;
-    }
 
     // Ensure we have an overlay manager
     if (!snowOverlayRef.current) {
@@ -247,51 +240,18 @@ export default function App() {
       return;
     }
 
-    const prevStep = lastRenderedStep.current;
     const curIdx = historicalSim.currentStep;
     lastRenderedStep.current = curIdx;
 
-    // If stepping by 1 and we have a previous step, interpolate smoothly
-    const prevData = prevStep >= 0 ? historicalSim.steps[prevStep] : null;
-    const isAdjacentStep = prevData && Math.abs(curIdx - prevStep) === 1;
+    // Show current step (uses pre-rendered provider if available — instant crossfade)
+    overlayMgr.showStep(curIdx, step.snowGrid, terrain);
 
-    if (isAdjacentStep && prevData) {
-      // Animate interpolation over ~250ms
-      const INTERP_MS = 250;
-      const start = performance.now();
-      const depthA = prevData.snowGrid.depth;
-      const depthB = step.snowGrid.depth;
-      const { rows, cols } = step.snowGrid;
-
-      // Precompute color stats from target step — stable across all frames
-      const colorStats = computeColorStats(depthB, rows, cols, terrain);
-
-      const animate = async () => {
-        const elapsed = performance.now() - start;
-        const t = Math.min(elapsed / INTERP_MS, 1);
-        // Ease-out quadratic for natural feel
-        const ease = 1 - (1 - t) * (1 - t);
-
-        await overlayMgr.renderInterpolated(depthA, depthB, ease, rows, cols, terrain, colorStats);
-
-        if (t < 1) {
-          interpRaf.current = requestAnimationFrame(animate);
-        } else {
-          interpRaf.current = null;
-        }
-      };
-      interpRaf.current = requestAnimationFrame(animate);
-    } else {
-      // Direct render (scrubbing, first frame, or big jump)
-      overlayMgr.render(step.snowGrid, terrain, "historical");
+    // Pre-render next step in background so the next transition is instant
+    const nextIdx = curIdx + 1;
+    if (nextIdx < historicalSim.steps.length) {
+      const nextStep = historicalSim.steps[nextIdx];
+      overlayMgr.prerender(nextIdx, nextStep.snowGrid, terrain);
     }
-
-    return () => {
-      if (interpRaf.current !== null) {
-        cancelAnimationFrame(interpRaf.current);
-        interpRaf.current = null;
-      }
-    };
   }, [historicalSim.currentStep, historicalSim.steps, historicalMode, showSnow, showWind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-start historical sim in background once worker terrain + weather are both ready

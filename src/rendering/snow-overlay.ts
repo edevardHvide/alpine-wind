@@ -8,7 +8,9 @@ import type { SnowDepthGrid } from "../types/snow.ts";
 import type { ElevationGrid } from "../types/terrain.ts";
 import { snowDepthColor, historicalSnowColor } from "./color-scales.ts";
 
-const CROSSFADE_MS = 300;
+const DEFAULT_CROSSFADE_MS = 300;
+const MIN_CROSSFADE_MS = 80;
+const MAX_CROSSFADE_MS = 400;
 
 export interface ColorStats {
   mean: number;
@@ -38,6 +40,11 @@ export function computeColorStats(
   return { mean, spread: Math.max(maxDev, 3) };
 }
 
+interface PrerenderedStep {
+  stepIndex: number;
+  provider: SingleTileImageryProvider;
+}
+
 export class SnowOverlayManager {
   private viewer: Viewer;
   private currentLayer: ImageryLayer | null = null;
@@ -45,14 +52,17 @@ export class SnowOverlayManager {
   private fadeRaf: number | null = null;
   private _targetAlpha = 0.55;
   private renderGen = 0;
+  private prerenderGen = 0;
+  private prerendered: PrerenderedStep | null = null;
+  private lastShowTime = 0;
+  private rect: ReturnType<typeof Rectangle.fromDegrees> | null = null;
 
   constructor(viewer: Viewer) {
     this.viewer = viewer;
   }
 
   /**
-   * Render snow overlay with crossfade transition.
-   * The new layer is added before the old one is removed — no gap.
+   * Render snow overlay with crossfade transition (manual mode / one-off).
    */
   async render(
     snow: SnowDepthGrid,
@@ -60,21 +70,20 @@ export class SnowOverlayManager {
     mode: "manual" | "historical" = "manual",
   ): Promise<void> {
     const gen = ++this.renderGen;
+    this.prerenderGen++; // invalidate any in-flight prerender
     const canvas = this.paintCanvas(snow, terrain, mode);
-    const { bbox } = terrain;
-    const rect = Rectangle.fromDegrees(bbox.west, bbox.south, bbox.east, bbox.north);
+    this.ensureRect(terrain);
     const provider = await SingleTileImageryProvider.fromUrl(
       canvas.toDataURL(),
-      { rectangle: rect },
+      { rectangle: this.rect! },
     );
 
-    if (gen !== this.renderGen) return; // Stale render — discard
+    if (gen !== this.renderGen) return;
 
     const newLayer = this.viewer.imageryLayers.addImageryProvider(provider);
 
-    // If there's an existing layer, crossfade from old to new
     if (this.currentLayer) {
-      this.crossfade(this.currentLayer, newLayer);
+      this.crossfade(this.currentLayer, newLayer, DEFAULT_CROSSFADE_MS);
     } else {
       newLayer.alpha = this._targetAlpha;
     }
@@ -83,65 +92,79 @@ export class SnowOverlayManager {
   }
 
   /**
-   * Render from interpolated depth arrays (for smooth playback).
+   * Show a historical step with adaptive crossfade.
+   * Uses pre-rendered provider if available (instant), otherwise renders on demand.
+   * Old layer stays fully visible until crossfade begins — no flash.
    */
-  async renderInterpolated(
-    depthA: Float64Array,
-    depthB: Float64Array,
-    t: number, // 0..1 blend factor
-    rows: number,
-    cols: number,
+  async showStep(
+    stepIndex: number,
+    snow: SnowDepthGrid,
     terrain: ElevationGrid,
     colorStats?: ColorStats,
   ): Promise<void> {
     const gen = ++this.renderGen;
-    const n = rows * cols;
-    const blended = new Float64Array(n);
-    const oneMinusT = 1 - t;
-    for (let i = 0; i < n; i++) {
-      blended[i] = depthA[i] * oneMinusT + depthB[i] * t;
+    this.ensureRect(terrain);
+
+    let provider: SingleTileImageryProvider;
+
+    if (this.prerendered && this.prerendered.stepIndex === stepIndex) {
+      // Pre-rendered — instant, no async work
+      provider = this.prerendered.provider;
+      this.prerendered = null;
+    } else {
+      // Not pre-rendered — render now
+      this.prerenderGen++;
+      const canvas = this.paintCanvas(snow, terrain, "historical", colorStats);
+      provider = await SingleTileImageryProvider.fromUrl(
+        canvas.toDataURL(),
+        { rectangle: this.rect! },
+      );
+      if (gen !== this.renderGen) return;
     }
 
-    // Build a minimal SnowDepthGrid for rendering
-    const snow: SnowDepthGrid = {
-      depth: blended,
-      isPowderZone: new Uint8Array(n), // not used in historical mode
-      rows,
-      cols,
-    };
+    const newLayer = this.viewer.imageryLayers.addImageryProvider(provider);
 
+    // Adaptive crossfade: measure time since last showStep call
+    const now = performance.now();
+    const stepInterval = this.lastShowTime > 0 ? now - this.lastShowTime : 1000;
+    this.lastShowTime = now;
+    // Use ~60% of the step interval for crossfade, clamped to sensible range
+    const fadeDuration = Math.max(MIN_CROSSFADE_MS, Math.min(MAX_CROSSFADE_MS, stepInterval * 0.6));
+
+    if (this.currentLayer) {
+      this.crossfade(this.currentLayer, newLayer, fadeDuration);
+    } else {
+      newLayer.alpha = this._targetAlpha;
+    }
+
+    this.currentLayer = newLayer;
+  }
+
+  /**
+   * Pre-render a future step in the background.
+   * Does NOT display anything — just prepares the provider for instant use by showStep().
+   */
+  async prerender(
+    stepIndex: number,
+    snow: SnowDepthGrid,
+    terrain: ElevationGrid,
+    colorStats?: ColorStats,
+  ): Promise<void> {
+    const gen = ++this.prerenderGen;
+    this.ensureRect(terrain);
     const canvas = this.paintCanvas(snow, terrain, "historical", colorStats);
-    const { bbox } = terrain;
-    const rect = Rectangle.fromDegrees(bbox.west, bbox.south, bbox.east, bbox.north);
     const provider = await SingleTileImageryProvider.fromUrl(
       canvas.toDataURL(),
-      { rectangle: rect },
+      { rectangle: this.rect! },
     );
-
-    if (gen !== this.renderGen) return; // Stale render — discard
-
-    const newLayer = this.viewer.imageryLayers.addImageryProvider(provider);
-    newLayer.alpha = this._targetAlpha;
-
-    // Capture old layers, update state immediately
-    const oldLayer = this.currentLayer;
-    const oldFading = this.fadingLayer;
-    this.currentLayer = newLayer;
-    this.fadingLayer = null;
-
-    // Defer removal by 1 frame so Cesium composites the new tile first
-    requestAnimationFrame(() => {
-      if (oldLayer && this.viewer.imageryLayers.contains(oldLayer)) {
-        this.viewer.imageryLayers.remove(oldLayer);
-      }
-      if (oldFading && this.viewer.imageryLayers.contains(oldFading)) {
-        this.viewer.imageryLayers.remove(oldFading);
-      }
-    });
+    if (gen !== this.prerenderGen) return; // stale prerender
+    this.prerendered = { stepIndex, provider };
   }
 
   remove(): void {
     this.cancelFade();
+    this.prerenderGen++;
+    this.prerendered = null;
     if (this.fadingLayer) {
       this.viewer.imageryLayers.remove(this.fadingLayer);
       this.fadingLayer = null;
@@ -154,6 +177,13 @@ export class SnowOverlayManager {
 
   destroy(): void {
     this.remove();
+  }
+
+  private ensureRect(terrain: ElevationGrid): void {
+    if (!this.rect) {
+      const { bbox } = terrain;
+      this.rect = Rectangle.fromDegrees(bbox.west, bbox.south, bbox.east, bbox.north);
+    }
   }
 
   private paintCanvas(
@@ -233,11 +263,11 @@ export class SnowOverlayManager {
     return canvas;
   }
 
-  private crossfade(oldLayer: ImageryLayer, newLayer: ImageryLayer): void {
+  private crossfade(oldLayer: ImageryLayer, newLayer: ImageryLayer, durationMs: number): void {
     this.cancelFade();
 
     // Clean up any previous fading layer that's still around
-    if (this.fadingLayer) {
+    if (this.fadingLayer && this.viewer.imageryLayers.contains(this.fadingLayer)) {
       this.viewer.imageryLayers.remove(this.fadingLayer);
     }
     this.fadingLayer = oldLayer;
@@ -248,7 +278,7 @@ export class SnowOverlayManager {
 
     const step = () => {
       const elapsed = performance.now() - start;
-      const t = Math.min(elapsed / CROSSFADE_MS, 1);
+      const t = Math.min(elapsed / durationMs, 1);
       // Ease-out cubic
       const ease = 1 - (1 - t) * (1 - t) * (1 - t);
 
@@ -261,7 +291,7 @@ export class SnowOverlayManager {
         this.fadeRaf = requestAnimationFrame(step);
       } else {
         // Done — remove old layer
-        if (this.fadingLayer) {
+        if (this.fadingLayer && this.viewer.imageryLayers.contains(this.fadingLayer)) {
           this.viewer.imageryLayers.remove(this.fadingLayer);
           this.fadingLayer = null;
         }
