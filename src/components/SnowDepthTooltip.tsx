@@ -47,6 +47,7 @@ export default function SnowDepthTooltip({
   };
 
   const hasWeather = temp !== undefined;
+  const hasDepth = depthCm >= 0;
   const showAnalyzeButton = onAnalyze && !summary && !analysisLoading && !analysisError;
 
   return (
@@ -57,12 +58,20 @@ export default function SnowDepthTooltip({
     >
       <div className="flex items-start gap-3">
         <div className="flex-1">
-          <p className="text-xl font-semibold text-sky-300 tabular-nums">
-            {depthCm.toFixed(1)} cm
-          </p>
-          <p className="text-xs text-slate-400 font-light mt-0.5">
-            Predicted snow depth
-          </p>
+          {hasDepth ? (
+            <>
+              <p className="text-xl font-semibold text-sky-300 tabular-nums">
+                {depthCm.toFixed(1)} cm
+              </p>
+              <p className="text-xs text-slate-400 font-light mt-0.5">
+                Predicted snow depth
+              </p>
+            </>
+          ) : (
+            <p className="text-sm font-medium text-slate-300">
+              Terrain point
+            </p>
+          )}
 
           {hasWeather && (
             <>

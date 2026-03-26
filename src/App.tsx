@@ -386,14 +386,10 @@ export default function App() {
     prevKey.current = "";
   }, [clearOverlays, historicalSim]);
 
-  // Handle snow depth probe click in simulation mode
+  // Handle probe click — works in both historical and default mode
   const handleProbeClick = useCallback((lat: number, lng: number, screenX: number, screenY: number) => {
-    if (!historicalMode || !historicalSim.steps) return;
     const terrain = terrainRef.current;
     if (!terrain) return;
-
-    const step = historicalSim.steps[historicalSim.currentStep];
-    if (!step) return;
 
     // Convert lat/lng to grid row/col
     const { bbox } = terrain;
@@ -406,8 +402,18 @@ export default function App() {
     }
 
     const gi = row * terrain.cols + col;
-    const depthCm = step.snowGrid.depth[gi];
     const elevation = terrain.heights[gi];
+
+    // Default mode: show elevation + coords, no depth/weather
+    if (!historicalMode || !historicalSim.steps) {
+      setDepthProbe({ lat, lng, depthCm: -1, screenX, screenY, elevation });
+      return;
+    }
+
+    const step = historicalSim.steps[historicalSim.currentStep];
+    if (!step) return;
+
+    const depthCm = step.snowGrid.depth[gi];
 
     // IDW-interpolate weather from stations at clicked point
     const weather = backgroundWeatherRef.current;

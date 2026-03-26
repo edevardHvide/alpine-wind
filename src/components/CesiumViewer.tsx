@@ -205,10 +205,10 @@ export default function CesiumViewer({
     };
   }, [searchedMountain, viewer]);
 
-  // Click handler for snow depth probe in historical mode
+  // Click handler for probe (historical mode: depth probe, default: terrain info + analyze)
   useEffect(() => {
     const v = viewer.current;
-    if (!v || !historicalMode || selectionMode) return;
+    if (!v || selectionMode) return;
 
     const handler = new ScreenSpaceEventHandler(v.scene.canvas);
     handler.setInputAction((event: { position: { x: number; y: number } }) => {
@@ -244,7 +244,7 @@ export default function CesiumViewer({
       handler.destroy();
       if (v.canvas) v.canvas.style.cursor = "";
     };
-  }, [historicalMode, selectionMode, viewer, onProbeClick]);
+  }, [selectionMode, viewer, onProbeClick]);
 
   return (
     <div
