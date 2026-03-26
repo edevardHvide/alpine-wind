@@ -590,7 +590,17 @@ export default function App() {
       const resp = await fetch(apiBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ point, observations: scored, forecast }),
+        body: JSON.stringify({
+          point,
+          observations: scored,
+          forecast,
+          weather: depthProbe.temp !== undefined ? {
+            temp: depthProbe.temp,
+            precip: depthProbe.precip,
+            windSpeed: depthProbe.windSpeed,
+            windDir: depthProbe.windDir,
+          } : undefined,
+        }),
         signal: controller.signal,
       });
 

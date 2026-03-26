@@ -2,8 +2,7 @@
 
 ## IMPORTANT: AWS Profile Rules
 
-**Default profile: `pow-predictor`** — use for EVERYTHING (logs, S3, CloudFront, Lambda config, API Gateway, all read operations).
-**`tennis-bot`** — ONLY for `tofu plan/apply` and `lambda update-function-code`. Nothing else.
+**Use `pow-predictor` profile for EVERYTHING** — S3, CloudFront, Lambda deploys, Lambda config, API Gateway, tofu plan/apply, logs, all read operations. No other profile.
 
 ## Project Overview
 
@@ -275,16 +274,13 @@ All AWS resources are codified in `infra/` and managed with OpenTofu:
 - **IAM:** Scoped deploy user `pow-predictor` (S3, CloudFront, Lambda, CloudWatch only)
 - **State:** `s3://pow-predictor-tfstate` (versioned)
 
-**Two AWS profiles:**
-- `tennis-bot` — admin, runs `tofu plan/apply` (infra changes) and Lambda code deploys
-- `pow-predictor` — scoped, runs S3/CloudFront deploys (`/deploy` skill)
+**AWS profile: `pow-predictor`** — used for all operations.
 
-### IMPORTANT: Lambda deploys require `tennis-bot` profile
+### Lambda deploys
 
-The `pow-predictor` IAM user does NOT have `lambda:UpdateFunctionCode` permission. Use `tennis-bot` profile when deploying Lambda code changes:
 ```bash
 aws lambda update-function-code --function-name pow-predictor-conditions-summary \
-  --zip-file fileb://path/to/zip --profile tennis-bot --region eu-north-1
+  --zip-file fileb://path/to/zip --profile pow-predictor --region eu-north-1
 ```
 **WARNING:** Each Lambda is a separate zip — do NOT deploy `conditions_summary.py` to the NVE proxy function or vice versa. This will break weather fetching in production.
 

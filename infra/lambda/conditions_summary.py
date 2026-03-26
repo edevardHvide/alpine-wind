@@ -4,16 +4,17 @@ import urllib.request
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 400
+MAX_TOKENS = 600
 
-SYSTEM_PROMPT = """You are an alpine conditions analyst. Be extremely concise — each field must be 1 short sentence max (under 20 words).
+SYSTEM_PROMPT = """You are an alpine conditions analyst. Be extremely concise — each field must be 1 short sentence max (under 20 words), except bestBet which can be 2-3 sentences.
 
-Return a JSON object with exactly these 5 keys:
+Return a JSON object with exactly these 6 keys:
 - "dataNotice": If no relevant field observations (relevance > 0.3) exist, say "No nearby field observations." Otherwise leave empty string.
 - "windTransport": 1 short sentence on drift at this aspect/elevation.
 - "surfaceConditions": 1 short sentence on likely snow surface.
 - "stabilityConcerns": 1 short sentence on stability issues or "No data."
 - "observedSnowDepth": If any observation includes a snow depth measurement, report it as "X cm (observed Y km away, Zh ago)". Otherwise empty string.
+- "bestBet": 2-3 sentences recommending the best aspect, elevation range, and terrain type for a ski tour to find the best snow right now. Consider wind transport (lee vs windward), recent precipitation, temperature, surface conditions from observations, and avalanche risk. Be specific and actionable (e.g. "Head for NE-facing slopes between 800-1000m...").
 
 Prioritize high-relevance, high-competency observations. Be direct, no hedging.
 
@@ -34,6 +35,21 @@ def build_user_message(body):
         f"{round(point['elevation'])}m elevation, {aspect_name}-facing ({aspect_deg} deg), "
         f"slope {round(point['slope'] * 180 / 3.14159)} deg"
     ]
+
+    # Current interpolated weather at clicked point
+    weather = body.get("weather")
+    if weather:
+        wx_parts = []
+        if weather.get("temp") is not None:
+            wx_parts.append(f"{weather['temp']:.1f}°C")
+        if weather.get("precip") is not None:
+            wx_parts.append(f"precip {weather['precip']:.1f} mm")
+        if weather.get("windSpeed") is not None:
+            wx_parts.append(f"wind {weather['windSpeed']:.1f} m/s")
+        if weather.get("windDir") is not None:
+            wx_parts.append(f"from {round(weather['windDir'])}°")
+        if wx_parts:
+            parts.append(f"\nCurrent weather at point: {', '.join(wx_parts)}")
 
     if forecast:
         parts.append(
@@ -173,6 +189,7 @@ def lambda_handler(event, context):
                 "windTransport": text[:200],
                 "surfaceConditions": "",
                 "stabilityConcerns": "",
+                "bestBet": "",
             }
 
         return {

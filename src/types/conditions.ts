@@ -61,5 +61,6 @@ export interface ConditionsSummary {
   surfaceConditions: string;
   stabilityConcerns: string;
   observedSnowDepth?: string;
+  bestBet?: string;
   topObsUrl?: string;
 }

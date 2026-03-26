@@ -204,6 +204,12 @@ export default function SnowDepthTooltip({
                   {summary.observedSnowDepth && (
                     <p className="text-slate-300"><span className="text-emerald-400">Snow depth</span> {summary.observedSnowDepth}</p>
                   )}
+                  {summary.bestBet && (
+                    <>
+                      <div className="h-px bg-emerald-400/20 my-1.5" />
+                      <p className="text-slate-300 leading-relaxed"><span className="text-emerald-400 font-medium">Best bet</span> {summary.bestBet}</p>
+                    </>
+                  )}
                   {summary.topObsUrl && (
                     <a
                       href={summary.topObsUrl}
@@ -374,6 +380,12 @@ export default function SnowDepthTooltip({
                 <p className="text-slate-300"><span className="text-sky-400">Wind</span> {summary.windTransport}</p>
                 <p className="text-slate-300"><span className="text-sky-400">Surface</span> {summary.surfaceConditions}</p>
                 <p className="text-slate-300"><span className="text-sky-400">Stability</span> {summary.stabilityConcerns}</p>
+                {summary.bestBet && (
+                  <>
+                    <div className="h-px bg-emerald-400/20 my-1.5" />
+                    <p className="text-slate-300 leading-relaxed"><span className="text-emerald-400 font-medium">Best bet</span> {summary.bestBet}</p>
+                  </>
+                )}
                 {summary.topObsUrl && (
                   <a
                     href={summary.topObsUrl}
