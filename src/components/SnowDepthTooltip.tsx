@@ -157,23 +157,13 @@ export default function SnowDepthTooltip({
           {summary && (
             <>
               <div className="h-px bg-sky-400/30 my-2" />
-              <div className="space-y-2 text-[11px]">
-                <div>
-                  <p className="font-semibold text-sky-300 mb-0.5">Wind & Transport</p>
-                  <p className="text-slate-300 leading-relaxed">{summary.windTransport}</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-sky-300 mb-0.5">Surface</p>
-                  <p className="text-slate-300 leading-relaxed">{summary.surfaceConditions}</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-sky-300 mb-0.5">Stability</p>
-                  <p className="text-slate-300 leading-relaxed">{summary.stabilityConcerns}</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-slate-500 mb-0.5">Confidence</p>
-                  <p className="text-slate-400 leading-relaxed italic">{summary.confidence}</p>
-                </div>
+              <div className="space-y-1.5 text-[11px]">
+                {summary.dataNotice && (
+                  <p className="text-amber-400 font-medium">{summary.dataNotice}</p>
+                )}
+                <p className="text-slate-300"><span className="text-sky-400">Wind</span> {summary.windTransport}</p>
+                <p className="text-slate-300"><span className="text-sky-400">Surface</span> {summary.surfaceConditions}</p>
+                <p className="text-slate-300"><span className="text-sky-400">Stability</span> {summary.stabilityConcerns}</p>
               </div>
             </>
           )}

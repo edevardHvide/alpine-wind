@@ -53,8 +53,8 @@ export interface ConditionsSummaryRequest {
 
 /** Response from /api/conditions-summary */
 export interface ConditionsSummary {
+  dataNotice: string;
   windTransport: string;
   surfaceConditions: string;
   stabilityConcerns: string;
-  confidence: string;
 }

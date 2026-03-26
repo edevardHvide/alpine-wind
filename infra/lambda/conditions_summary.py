@@ -4,24 +4,19 @@ import urllib.request
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 1024
+MAX_TOKENS = 400
 
-SYSTEM_PROMPT = """You are an alpine conditions analyst for a specific terrain point in Norway. You synthesize field observations and forecasts into a concise conditions summary.
-
-The user provides:
-- A terrain point with elevation, aspect, and slope
-- Nearby field observations scored by relevance (0-1) to that specific terrain
-- An optional regional avalanche forecast
+SYSTEM_PROMPT = """You are an alpine conditions analyst. Be extremely concise — each field must be 1 short sentence max (under 20 words).
 
 Return a JSON object with exactly these 4 keys:
-- "windTransport": 1-2 sentences on wind drift conditions at this aspect and elevation
-- "surfaceConditions": 1-2 sentences on likely snow surface based on similar-aspect observations
-- "stabilityConcerns": 1-2 sentences on danger signs, wind slab, or avalanche activity
-- "confidence": 1 sentence stating high/medium/low confidence, number of observations used, and most relevant data source
+- "dataNotice": If no relevant field observations (relevance > 0.3) exist, say "No nearby field observations." Otherwise leave empty string.
+- "windTransport": 1 short sentence on drift at this aspect/elevation.
+- "surfaceConditions": 1 short sentence on likely snow surface.
+- "stabilityConcerns": 1 short sentence on stability issues or "No data."
 
-Prioritize observations with high relevance scores and high observer competency (5=expert, 1=novice). If the most relevant observations conflict, say so. If no observations have relevance above 0.5, state that the assessment is based on limited nearby data and the regional forecast.
+Prioritize high-relevance, high-competency observations. Be direct, no hedging.
 
-Return ONLY the raw JSON object. Do NOT wrap it in markdown code blocks. Do NOT include any text before or after the JSON."""
+Return ONLY raw JSON, no markdown."""
 
 
 def build_user_message(body):
@@ -147,10 +142,10 @@ def lambda_handler(event, context):
             summary = json.loads(cleaned)
         except json.JSONDecodeError:
             summary = {
-                "windTransport": text[:500],
+                "dataNotice": "",
+                "windTransport": text[:200],
                 "surfaceConditions": "",
                 "stabilityConcerns": "",
-                "confidence": "Low -- could not parse structured response",
             }
 
         return {
