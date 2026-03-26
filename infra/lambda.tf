@@ -77,3 +77,36 @@ resource "aws_lambda_permission" "conditions_summary_apigw" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.nve_proxy.execution_arn}/*/*"
 }
+
+# --- Lambda: Feedback (GitHub issue creation) ---
+
+data "archive_file" "feedback" {
+  type        = "zip"
+  source_file = "${path.module}/lambda/feedback.py"
+  output_path = "${path.module}/.build/feedback.zip"
+}
+
+resource "aws_lambda_function" "feedback" {
+  function_name    = "${var.project_name}-feedback"
+  role             = aws_iam_role.lambda.arn
+  handler          = "feedback.lambda_handler"
+  runtime          = "python3.11"
+  timeout          = 15
+  memory_size      = 128
+  filename         = data.archive_file.feedback.output_path
+  source_code_hash = data.archive_file.feedback.output_base64sha256
+
+  environment {
+    variables = {
+      GITHUB_TOKEN = var.github_token
+    }
+  }
+}
+
+resource "aws_lambda_permission" "feedback_apigw" {
+  statement_id  = "ApiGatewayInvokeFeedback"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.feedback.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.nve_proxy.execution_arn}/*/*"
+}

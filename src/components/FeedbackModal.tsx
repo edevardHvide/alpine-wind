@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { API_GATEWAY_URL } from "../api/nve.ts";
 
 interface FeedbackModalProps {
   open: boolean;
@@ -18,7 +19,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; url?: string; error?: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -55,38 +56,27 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
       `*Submitted from Pow Predictor v${__APP_VERSION__}*`,
     ].filter(Boolean).join("\n");
 
+    const url = import.meta.env.DEV
+      ? "/api/feedback"
+      : `${API_GATEWAY_URL}/api/feedback`;
+
     try {
-      const res = await fetch("https://api.github.com/repos/edevardHvide/pow-predictor/issues", {
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: issueTitle, body: issueBody, labels: [labels] }),
       });
 
-      if (res.status === 201) {
-        const data = await res.json();
-        setResult({ ok: true, url: data.html_url });
-        setTitle("");
-        setBody("");
-      } else if (res.status === 401 || res.status === 403) {
-        // Public repos can't create issues without auth — fallback to opening GitHub
-        const fallbackUrl = `https://github.com/edevardHvide/pow-predictor/issues/new?` +
-          `labels=${labels}&title=${encodeURIComponent(issueTitle)}&body=${encodeURIComponent(issueBody)}`;
-        window.open(fallbackUrl, "_blank", "noopener,noreferrer");
+      if (res.ok) {
         setResult({ ok: true });
         setTitle("");
         setBody("");
+        setTimeout(onClose, 2000);
       } else {
-        const text = await res.text();
-        setResult({ ok: false, error: `GitHub API error (${res.status}): ${text.slice(0, 120)}` });
+        setResult({ ok: false, error: `Something went wrong (${res.status}). Please try again.` });
       }
-    } catch (err) {
-      // Network error — fallback to GitHub web
-      const fallbackUrl = `https://github.com/edevardHvide/pow-predictor/issues/new?` +
-        `labels=${labels}&title=${encodeURIComponent(issueTitle)}&body=${encodeURIComponent(issueBody)}`;
-      window.open(fallbackUrl, "_blank", "noopener,noreferrer");
-      setResult({ ok: true });
-      setTitle("");
-      setBody("");
+    } catch {
+      setResult({ ok: false, error: "Network error. Please check your connection and try again." });
     } finally {
       setSubmitting(false);
     }
@@ -133,12 +123,8 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <p className="text-sm text-slate-200 font-light mb-1">Thanks for your feedback!</p>
-            {result.url && (
-              <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-400 hover:text-sky-300 transition-colors">
-                View on GitHub
-              </a>
-            )}
+            <p className="text-sm text-slate-200 font-light mb-1">Thank you for your feedback!</p>
+            <p className="text-xs text-slate-400 font-light">The developers will look into it as soon as possible, but they are very busy.</p>
             <button onClick={onClose} className="mt-4 text-xs text-slate-400 hover:text-slate-300 block mx-auto transition-colors">
               Close
             </button>
@@ -204,7 +190,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
             </button>
 
             <p className="text-[10px] text-slate-500 text-center mt-2 font-light">
-              Opens as a GitHub issue
+              Your feedback helps us improve
             </p>
           </>
         )}

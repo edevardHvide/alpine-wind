@@ -27,3 +27,9 @@ variable "anthropic_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "github_token" {
+  description = "GitHub personal access token for feedback issue creation"
+  type        = string
+  sensitive   = true
+}
