@@ -44,3 +44,36 @@ resource "aws_lambda_permission" "apigw" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.nve_proxy.execution_arn}/*/*"
 }
+
+# --- Lambda: Conditions Summary (Claude API) ---
+
+data "archive_file" "conditions_summary" {
+  type        = "zip"
+  source_file = "${path.module}/lambda/conditions_summary.py"
+  output_path = "${path.module}/.build/conditions_summary.zip"
+}
+
+resource "aws_lambda_function" "conditions_summary" {
+  function_name    = "${var.project_name}-conditions-summary"
+  role             = aws_iam_role.lambda.arn
+  handler          = "conditions_summary.lambda_handler"
+  runtime          = "python3.11"
+  timeout          = 30
+  memory_size      = 128
+  filename         = data.archive_file.conditions_summary.output_path
+  source_code_hash = data.archive_file.conditions_summary.output_base64sha256
+
+  environment {
+    variables = {
+      ANTHROPIC_API_KEY = var.anthropic_api_key
+    }
+  }
+}
+
+resource "aws_lambda_permission" "conditions_summary_apigw" {
+  statement_id  = "ApiGatewayInvokeConditionsSummary"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.conditions_summary.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.nve_proxy.execution_arn}/*/*"
+}

@@ -21,3 +21,9 @@ variable "s3_bucket_name" {
   type        = string
   default     = "pow-predictor-frontend"
 }
+
+variable "anthropic_api_key" {
+  description = "Anthropic API key for conditions summary Lambda"
+  type        = string
+  sensitive   = true
+}
