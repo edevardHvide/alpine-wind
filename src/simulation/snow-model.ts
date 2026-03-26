@@ -10,6 +10,7 @@ import {
   SKIABLE_SLOPE_MIN,
   SKIABLE_SLOPE_MAX,
   ADVECTION_ITERATIONS,
+  type CoefficientsOverride,
 } from "./coefficients.ts";
 
 // Li & Pomeroy 1997 — friction velocity threshold by temperature
@@ -34,7 +35,11 @@ function advectSaltation(
   wind: WindField,
   params: WindParams,
   snowfallCm: number | Float64Array,
+  overrides?: CoefficientsOverride,
 ): Float64Array {
+  const karman = overrides?.KARMAN_DRAG_COEFF ?? KARMAN_DRAG_COEFF;
+  const advIter = overrides?.ADVECTION_ITERATIONS ?? ADVECTION_ITERATIONS;
+
   const { rows, cols, heights, slopes, cellSizeMeters } = terrain;
   const n = rows * cols;
 
@@ -53,7 +58,7 @@ function advectSaltation(
   const windStrength = smoothstep(0, 2, params.speed);
 
   // Reference max flux for normalization (30 m/s wind)
-  const uStarMax = 30 * KARMAN_DRAG_COEFF;
+  const uStarMax = 30 * karman;
   const qRef = uStarMax * (uStarMax * uStarMax - uStarTh * uStarTh);
 
   // Scale factor: maps normalized flux [0,1] to cm of erosion per iteration
@@ -64,13 +69,13 @@ function advectSaltation(
     : (snowfallCm as number);
   const erosionScale = meanFall * 0.25;
 
-  for (let iter = 0; iter < ADVECTION_ITERATIONS; iter++) {
+  for (let iter = 0; iter < advIter; iter++) {
     // 1. Erosion & deposition per cell
     for (let i = 0; i < n; i++) {
       if (heights[i] < 40) continue;
 
       const speed = Math.sqrt(wind.u[i] ** 2 + wind.v[i] ** 2);
-      const uStar = speed * KARMAN_DRAG_COEFF;
+      const uStar = speed * karman;
 
       // Erosion: Pomeroy flux normalized to [0,1], fetch-limited
       if (uStar > uStarTh && snow[i] > 0.1) {
@@ -156,7 +161,13 @@ export function computeSnowAccumulation(
   wind: WindField,
   params: WindParams,
   snowfallCm: number | Float64Array = BASE_SNOWFALL_CM,
+  overrides?: CoefficientsOverride,
 ): SnowDepthGrid {
+  const powTempMin = overrides?.POWDER_TEMP_MIN ?? POWDER_TEMP_MIN;
+  const powTempMax = overrides?.POWDER_TEMP_MAX ?? POWDER_TEMP_MAX;
+  const skiSlopeMin = overrides?.SKIABLE_SLOPE_MIN ?? SKIABLE_SLOPE_MIN;
+  const skiSlopeMax = overrides?.SKIABLE_SLOPE_MAX ?? SKIABLE_SLOPE_MAX;
+
   const { rows, cols, slopes, heights } = terrain;
   const n = rows * cols;
   const isPowderZone = new Uint8Array(n);
@@ -168,7 +179,7 @@ export function computeSnowAccumulation(
   }
 
   // Advection-based redistribution
-  const depth = advectSaltation(terrain, wind, params, snowfallCm);
+  const depth = advectSaltation(terrain, wind, params, snowfallCm, overrides);
 
   // For powder detection, use mean snowfall as reference
   const meanSnowfall = typeof snowfallCm === "number"
@@ -176,12 +187,12 @@ export function computeSnowAccumulation(
     : snowfallCm.reduce((a, b) => a + b, 0) / Math.max(n, 1);
 
   // Powder zone detection: powder survives in sheltered, low-wind areas
-  const inPowderTemp = params.temperature >= POWDER_TEMP_MIN && params.temperature <= POWDER_TEMP_MAX;
+  const inPowderTemp = params.temperature >= powTempMin && params.temperature <= powTempMax;
   if (inPowderTemp) {
     for (let i = 0; i < n; i++) {
       if (heights[i] < 40) continue;
       const slopeDeg = slopes[i] * (180 / Math.PI);
-      const skiable = slopeDeg >= SKIABLE_SLOPE_MIN && slopeDeg <= SKIABLE_SLOPE_MAX;
+      const skiable = slopeDeg >= skiSlopeMin && slopeDeg <= skiSlopeMax;
       if (!skiable) continue;
 
       const surfaceSpeed = Math.sqrt(wind.u[i] ** 2 + wind.v[i] ** 2);

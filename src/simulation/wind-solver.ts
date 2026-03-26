@@ -8,6 +8,7 @@ import {
   RELAXATION_ALPHA,
   SURFACE_ROUGHNESS,
   REF_HEIGHT,
+  type CoefficientsOverride,
 } from "./coefficients.ts";
 
 // Interpolate Sx between two nearest precomputed sectors, or compute from scratch
@@ -52,7 +53,14 @@ function interpolateSx(
 export function solveWindField(
   terrain: ElevationGrid,
   params: WindParams,
+  overrides?: CoefficientsOverride,
 ): WindField {
+  const maxIter = overrides?.MAX_ITERATIONS ?? MAX_ITERATIONS;
+  const divThreshold = overrides?.DIVERGENCE_THRESHOLD ?? DIVERGENCE_THRESHOLD;
+  const relaxAlpha = overrides?.RELAXATION_ALPHA ?? RELAXATION_ALPHA;
+  const surfRough = overrides?.SURFACE_ROUGHNESS ?? SURFACE_ROUGHNESS;
+  const refH = overrides?.REF_HEIGHT ?? REF_HEIGHT;
+
   const { rows, cols } = terrain;
   const layers = LAYER_HEIGHTS.length;
   const totalCells = rows * cols * layers;
@@ -66,7 +74,7 @@ export function solveWindField(
   // Initialize with log-profile wind
   for (let layer = 0; layer < layers; layer++) {
     const z = LAYER_HEIGHTS[layer];
-    const logFactor = Math.log(z / SURFACE_ROUGHNESS) / Math.log(REF_HEIGHT / SURFACE_ROUGHNESS);
+    const logFactor = Math.log(z / surfRough) / Math.log(refH / surfRough);
     const layerU = baseU * logFactor;
     const layerV = baseV * logFactor;
 
@@ -89,11 +97,11 @@ export function solveWindField(
   // Iterative mass-conservation
   let finalDiv = 0;
   let finalIter = 0;
-  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
-    const maxDiv = enforceMassConservation(u, v, w, rows, cols, layers, terrain.cellSizeMeters);
+  for (let iter = 0; iter < maxIter; iter++) {
+    const maxDiv = enforceMassConservation(u, v, w, rows, cols, layers, terrain.cellSizeMeters, relaxAlpha);
     finalDiv = maxDiv;
     finalIter = iter;
-    if (maxDiv < DIVERGENCE_THRESHOLD) break;
+    if (maxDiv < divThreshold) break;
   }
 
   // Debug
@@ -204,6 +212,7 @@ function enforceMassConservation(
   cols: number,
   layers: number,
   cellSize: number,
+  relaxAlpha: number = RELAXATION_ALPHA,
 ): number {
   let maxDiv = 0;
   const layerSize = rows * cols;
@@ -227,12 +236,12 @@ function enforceMassConservation(
         const div = dudx + dvdy + dwdz;
         maxDiv = Math.max(maxDiv, Math.abs(div));
 
-        const share = RELAXATION_ALPHA * div * cellSize / dims;
+        const share = relaxAlpha * div * cellSize / dims;
         u[idx] -= share;
         v[idx] -= share;
         if (dims === 3) {
           const dz = (LAYER_HEIGHTS[layer + 1] - LAYER_HEIGHTS[layer - 1]) / 2;
-          w[idx] -= RELAXATION_ALPHA * div * dz / dims;
+          w[idx] -= relaxAlpha * div * dz / dims;
         }
       }
     }

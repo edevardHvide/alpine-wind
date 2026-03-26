@@ -1,6 +1,7 @@
 // src/simulation/worker-protocol.ts
 import type { WindParams } from "../types/wind.ts";
 import type { BoundingBox } from "../types/terrain.ts";
+import type { CoefficientsOverride } from "./coefficients.ts";
 
 // ── Messages: Main → Worker ──────────────────────────
 
@@ -16,6 +17,7 @@ export interface InitTerrainMessage {
 export interface RunSimulationMessage {
   type: "run-simulation";
   params: WindParams;
+  overrides?: CoefficientsOverride;
 }
 
 export interface WeatherStationData {

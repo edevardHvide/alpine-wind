@@ -41,8 +41,8 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
 
     else if (msg.type === "run-simulation") {
       if (!terrain) throw new Error("Terrain not initialized");
-      const windField = solveWindField(terrain, msg.params);
-      const snowGrid = computeSnowAccumulation(terrain, windField, msg.params);
+      const windField = solveWindField(terrain, msg.params, msg.overrides);
+      const snowGrid = computeSnowAccumulation(terrain, windField, msg.params, undefined, msg.overrides);
 
       self.postMessage({
         type: "simulation-result",
