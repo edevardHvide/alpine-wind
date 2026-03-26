@@ -18,6 +18,9 @@ import { WindCanvasLayer } from "./rendering/wind-layer-adapter.ts";
 import { isMobileDevice, MOBILE_PARTICLE_COUNT, DESKTOP_PARTICLE_COUNT } from "./utils/device.ts";
 import type { WindParams } from "./types/wind.ts";
 import type { Viewer } from "cesium";
+import DevCoefficientPanel from "./components/DevCoefficientPanel.tsx";
+import { useDevMode } from "./hooks/useDevMode.ts";
+import type { CoefficientsOverride } from "./simulation/coefficients.ts";
 
 export default function App() {
   const [region, setRegion] = useState(REGIONS[0]);
@@ -57,6 +60,9 @@ export default function App() {
   const snowOverlayRef = useRef<SnowOverlayManager | null>(null);
   const { state, setTerrain, runSimulation, clearSimulation, terrainRef, workerRef, workerReady } = useSimulation();
   const historicalSim = useHistoricalSim(workerRef);
+
+  const { devEnabled, devVisible } = useDevMode();
+  const devOverridesRef = useRef<CoefficientsOverride>({});
 
   // Derive displayed progress: prefetch phase OR worker computation phase
   const displayProgress = historicalSim.progress ?? loadingProgress;
@@ -477,6 +483,11 @@ export default function App() {
     }
   }, [historicalSim]);
 
+  const handleDevApply = useCallback((overrides: CoefficientsOverride) => {
+    devOverridesRef.current = overrides;
+    runSimulation(params, overrides);
+  }, [params, runSimulation]);
+
   return (
     <div className="relative w-full h-full">
       <WelcomePage />
@@ -632,6 +643,13 @@ export default function App() {
           windDir={depthProbe.windDir}
           elevation={depthProbe.elevation}
           onClose={() => setDepthProbe(null)}
+        />
+      )}
+
+      {devEnabled && (
+        <DevCoefficientPanel
+          visible={devVisible}
+          onApply={handleDevApply}
         />
       )}
     </div>
