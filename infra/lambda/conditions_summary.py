@@ -8,11 +8,12 @@ MAX_TOKENS = 400
 
 SYSTEM_PROMPT = """You are an alpine conditions analyst. Be extremely concise — each field must be 1 short sentence max (under 20 words).
 
-Return a JSON object with exactly these 4 keys:
+Return a JSON object with exactly these 5 keys:
 - "dataNotice": If no relevant field observations (relevance > 0.3) exist, say "No nearby field observations." Otherwise leave empty string.
 - "windTransport": 1 short sentence on drift at this aspect/elevation.
 - "surfaceConditions": 1 short sentence on likely snow surface.
 - "stabilityConcerns": 1 short sentence on stability issues or "No data."
+- "observedSnowDepth": If any observation includes a snow depth measurement, report it as "X cm (observed Y km away, Zh ago)". Otherwise empty string.
 
 Prioritize high-relevance, high-competency observations. Be direct, no hedging.
 
@@ -52,6 +53,8 @@ def build_user_message(body):
             if r.get("snowSurface"):
                 s = r["snowSurface"]
                 reg_parts.append(f"Surface: {s['surfaceType']}")
+                if s.get("snowDepth") is not None:
+                    reg_parts.append(f"Snow depth: {s['snowDepth']} cm")
                 if s.get("driftName"):
                     reg_parts.append(f"Drift: {s['driftName']}")
                 if s.get("comment"):

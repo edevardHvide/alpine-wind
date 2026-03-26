@@ -107,6 +107,7 @@ function parseObservations(raw: unknown[]): RegObsObservation[] {
       obs.registrations.snowSurface = {
         surfaceType: ss.SnowSurfaceName ?? "",
         driftName: ss.SnowDriftName,
+        snowDepth: ss.SnowDepth,
         comment: ss.Comment,
       };
     }

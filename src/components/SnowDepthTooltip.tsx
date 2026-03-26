@@ -79,7 +79,7 @@ export default function SnowDepthTooltip({
                   {depthCm.toFixed(1)} cm
                 </p>
                 <p className="text-xs text-slate-400 font-light mt-0.5">
-                  Predicted snow depth
+                  Predicted accumulation from sim period
                 </p>
               </>
             ) : (
@@ -201,6 +201,9 @@ export default function SnowDepthTooltip({
                   <p className="text-slate-300"><span className="text-sky-400">Wind</span> {summary.windTransport}</p>
                   <p className="text-slate-300"><span className="text-sky-400">Surface</span> {summary.surfaceConditions}</p>
                   <p className="text-slate-300"><span className="text-sky-400">Stability</span> {summary.stabilityConcerns}</p>
+                  {summary.observedSnowDepth && (
+                    <p className="text-slate-300"><span className="text-emerald-400">Snow depth</span> {summary.observedSnowDepth}</p>
+                  )}
                   {summary.topObsUrl && (
                     <a
                       href={summary.topObsUrl}
@@ -245,7 +248,7 @@ export default function SnowDepthTooltip({
                 {depthCm.toFixed(1)} cm
               </p>
               <p className="text-xs text-slate-400 font-light mt-0.5">
-                Predicted snow depth
+                Predicted accumulation from sim period
               </p>
             </>
           ) : (

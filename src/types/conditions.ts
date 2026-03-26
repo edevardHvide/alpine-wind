@@ -8,7 +8,7 @@ export interface RegObsObservation {
   elevation?: number;
   nickName?: string;
   registrations: {
-    snowSurface?: { surfaceType: string; driftName?: string; comment?: string };
+    snowSurface?: { surfaceType: string; snowDepth?: number; driftName?: string; comment?: string };
     dangerSigns?: { signs: string[]; comment?: string };
     avalancheObs?: { size: string; trigger: string; type: string; comment?: string };
     avalancheActivity?: { entries: { type: string; trigger: string; size: string }[] };
@@ -60,5 +60,6 @@ export interface ConditionsSummary {
   windTransport: string;
   surfaceConditions: string;
   stabilityConcerns: string;
+  observedSnowDepth?: string;
   topObsUrl?: string;
 }
