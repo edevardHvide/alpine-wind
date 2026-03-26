@@ -1,8 +1,8 @@
 // In dev: Vite proxy handles CORS. In prod: API Gateway proxies to NVE.
-const NVE_PROXY_URL = "https://1uv0uf8m0g.execute-api.eu-north-1.amazonaws.com";
+export const API_GATEWAY_URL = "https://1uv0uf8m0g.execute-api.eu-north-1.amazonaws.com";
 const API_BASE = import.meta.env.DEV
   ? "/api/nve/GridTimeSeries"
-  : `${NVE_PROXY_URL}/api/nve/GridTimeSeries`;
+  : `${API_GATEWAY_URL}/api/nve/GridTimeSeries`;
 
 export interface WeatherTimeSeries {
   timestamps: Date[];

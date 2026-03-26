@@ -10,7 +10,11 @@ import TimelineBar from "./components/TimelineBar.tsx";
 import WelcomePage from "./components/WelcomePage.tsx";
 import { REGIONS, regionFromCoordinates } from "./simulation/regions.ts";
 import type { PlaceResult } from "./api/kartverket.ts";
-import { fetchSpatialWeather, type SpatialWeatherTimeSeries } from "./api/nve.ts";
+import { fetchSpatialWeather, type SpatialWeatherTimeSeries, API_GATEWAY_URL } from "./api/nve.ts";
+import { fetchRegObsObservations } from "./api/regobs.ts";
+import { fetchVarsomForecast } from "./api/varsom.ts";
+import { computeCellAspectSlope, scoreAndFilterObservations } from "./utils/relevance.ts";
+import type { ConditionsSummary, TerrainPoint } from "./types/conditions.ts";
 import { useSimulation } from "./hooks/useSimulation.ts";
 import { useHistoricalSim } from "./hooks/useHistoricalSim.ts";
 import { renderSnowOverlay, removeSnowOverlay, SnowOverlayManager, computeColorStats } from "./rendering/snow-overlay.ts";
@@ -49,6 +53,12 @@ export default function App() {
     temp?: number; precip?: number; windSpeed?: number; windDir?: number;
     elevation?: number;
   } | null>(null);
+
+  // Conditions analysis state
+  const [conditionsSummary, setConditionsSummary] = useState<ConditionsSummary | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const analyzeAbortRef = useRef<AbortController | null>(null);
 
   const [cesiumViewer, setCesiumViewer] = useState<Viewer | null>(null);
   const viewerRef = useRef<Viewer | null>(null);
@@ -460,9 +470,82 @@ export default function App() {
     setDepthProbe({ lat, lng, depthCm, screenX, screenY, temp, precip, windSpeed, windDir, elevation });
   }, [historicalMode, historicalSim.steps, historicalSim.currentStep, terrainRef]);
 
+  const handleAnalyze = useCallback(async () => {
+    if (!depthProbe || !terrainRef.current) return;
+    const terrain = terrainRef.current;
+
+    // Abort any in-flight request
+    if (analyzeAbortRef.current) analyzeAbortRef.current.abort();
+    const controller = new AbortController();
+    analyzeAbortRef.current = controller;
+
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    setConditionsSummary(null);
+
+    try {
+      // Compute aspect/slope for clicked cell
+      const { bbox } = terrain;
+      const row = Math.round(((depthProbe.lat - bbox.south) / (bbox.north - bbox.south)) * terrain.rows - 0.5);
+      const col = Math.round(((depthProbe.lng - bbox.west) / (bbox.east - bbox.west)) * terrain.cols - 0.5);
+      const { aspect, slope } = computeCellAspectSlope(
+        terrain.heights, terrain.rows, terrain.cols, terrain.cellSizeMeters, row, col,
+      );
+
+      const point: TerrainPoint = {
+        lat: depthProbe.lat,
+        lng: depthProbe.lng,
+        elevation: depthProbe.elevation ?? terrain.heights[row * terrain.cols + col],
+        aspect,
+        slope,
+      };
+
+      // Fetch RegObs + Varsom in parallel
+      const [observations, forecast] = await Promise.all([
+        fetchRegObsObservations(point.lat, point.lng, 30, 7, controller.signal),
+        fetchVarsomForecast(point.lat, point.lng, controller.signal),
+      ]);
+
+      // Score observations using terrain grid
+      const scored = scoreAndFilterObservations(
+        point, observations, terrain.heights, terrain.rows, terrain.cols,
+        terrain.cellSizeMeters, bbox,
+      );
+
+      // POST to Lambda
+      const apiBase = import.meta.env.DEV
+        ? "/api/conditions-summary"
+        : `${API_GATEWAY_URL}/api/conditions-summary`;
+
+      const resp = await fetch(apiBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ point, observations: scored, forecast }),
+        signal: controller.signal,
+      });
+
+      if (!resp.ok) throw new Error(`${resp.status}`);
+      const summary: ConditionsSummary = await resp.json();
+
+      setConditionsSummary(summary);
+      setAnalysisLoading(false);
+    } catch (err: any) {
+      if (err.name === "AbortError") return;
+      setAnalysisError("Could not load");
+      setAnalysisLoading(false);
+    }
+  }, [depthProbe, terrainRef]);
+
   // Clear probe when step changes
   useEffect(() => {
     setDepthProbe(null);
+    setConditionsSummary(null);
+    setAnalysisLoading(false);
+    setAnalysisError(null);
+    if (analyzeAbortRef.current) {
+      analyzeAbortRef.current.abort();
+      analyzeAbortRef.current = null;
+    }
   }, [historicalSim.currentStep]);
 
   // Handle timeline step change
@@ -632,6 +715,10 @@ export default function App() {
           windDir={depthProbe.windDir}
           elevation={depthProbe.elevation}
           onClose={() => setDepthProbe(null)}
+          onAnalyze={handleAnalyze}
+          analysisLoading={analysisLoading}
+          analysisError={analysisError}
+          summary={conditionsSummary}
         />
       )}
     </div>
