@@ -60,6 +60,7 @@ export default function SnowDepthTooltip({
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768 && "ontouchstart" in window;
 
   const hasWeather = temp !== undefined;
+  const weatherLoading = !hasWeather && depthCm < 0; // No weather yet in exploration mode
   const hasDepth = depthCm >= 0;
   const showAnalyzeButton = onAnalyze && !summary && !analysisLoading && !analysisError;
 
@@ -85,6 +86,13 @@ export default function SnowDepthTooltip({
               <p className="text-sm text-slate-400 font-light">
                 {hasWeather ? weatherEmoji(temp!, precip!, windSpeed!, cloudCover ?? 50) + " " : ""}Current weather
               </p>
+            )}
+
+            {weatherLoading && (
+              <div className="flex items-center gap-2 text-xs text-slate-500 mt-1.5">
+                <div className="w-3 h-3 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
+                Loading weather...
+              </div>
             )}
 
             {hasWeather && (
@@ -244,6 +252,13 @@ export default function SnowDepthTooltip({
             <p className="text-xs text-slate-400 font-light">
               {hasWeather ? weatherEmoji(temp!, precip!, windSpeed!, cloudCover ?? 50) + " " : ""}Current weather
             </p>
+          )}
+
+          {weatherLoading && (
+            <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1.5">
+              <div className="w-2.5 h-2.5 border-[1.5px] border-slate-500 border-t-transparent rounded-full animate-spin" />
+              Loading weather...
+            </div>
           )}
 
           {hasWeather && (
