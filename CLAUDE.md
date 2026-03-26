@@ -76,7 +76,7 @@ The snow model uses physically-based advection, NOT simple per-cell factors. Sno
 - **Pomeroy-Gray saltation flux:** `Q ~ u*(u*^2 - u*_th^2)` — cubic/quartic scaling. At 15 m/s, erosion is ~8x that at 7 m/s. A linear model would only predict 2x.
 - **Temperature-dependent thresholds (Li & Pomeroy 1997):** Fresh powder at -15C moves at 4 m/s; wet snow at 0C resists until 15 m/s.
 - **Fetch-limited erosion:** `deficit = equilibrium - currentTransport`. Long fetches saturate; short ridges don't.
-- **Sublimation:** 2-5% per iteration (15-25% total at moderate wind).
+- **Sublimation:** 1-3% per iteration (~15% total at moderate wind).
 - **Von Karman drag:** `u* = surfaceSpeed * 0.04`
 
 ### Key Constants
@@ -84,12 +84,18 @@ The snow model uses physically-based advection, NOT simple per-cell factors. Sno
 ```
 KARMAN_DRAG_COEFF = 0.04
 ADVECTION_ITERATIONS = 12
-erosionScale = snowfallCm * 0.25 (max erosion per iteration at reference wind)
+erosionScale = snowfallCm * 0.15 (max erosion per iteration at reference wind)
+windStrength = smoothstep(0, 12, globalSpeed) (scales erosion with wind)
+per-cell erosion cap = snow[i] * 0.15
 ```
 
 ### IMPORTANT: Erosion Scaling
 
 The raw Pomeroy flux is in physical units (tiny numbers). It MUST be normalized to [0,1] range using a reference max wind (30 m/s) and then scaled to meaningful cm values via `erosionScale`. Without this normalization, redistribution appears nearly uniform (depth range of 27-32cm instead of 2-58cm). This was a bug found during development.
+
+### Exploration Mode Multi-Step
+
+Exploration mode reuses the same `computeSnowAccumulation` as historical mode but with constant wind. Instead of one big dump, 50cm base snowfall is spread over 8 sub-steps (~6.25cm each), with redistribution running at each step. This makes compound redistribution look natural (like a 24h storm) rather than artificial single-pass. The wind field is solved once and reused across all steps.
 
 ## Wind Solver
 
