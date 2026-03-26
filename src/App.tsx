@@ -388,6 +388,15 @@ export default function App() {
 
   // Handle probe click — works in both historical and default mode
   const handleProbeClick = useCallback((lat: number, lng: number, screenX: number, screenY: number) => {
+    // Clear previous analysis on new click
+    setConditionsSummary(null);
+    setAnalysisLoading(false);
+    setAnalysisError(null);
+    if (analyzeAbortRef.current) {
+      analyzeAbortRef.current.abort();
+      analyzeAbortRef.current = null;
+    }
+
     const terrain = terrainRef.current;
     if (!terrain) return;
 
