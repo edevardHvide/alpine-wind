@@ -1,13 +1,14 @@
 import type { ElevationGrid } from "../types/terrain.ts";
 import type { WindField, WindParams } from "../types/wind.ts";
 import { windDirToComponents, clamp } from "../utils/math.ts";
-
-const LAYER_HEIGHTS = [10, 50]; // meters AGL — ground level only
-const MAX_ITERATIONS = 100;
-const DIVERGENCE_THRESHOLD = 0.005;
-const RELAXATION_ALPHA = 0.1;
-const SURFACE_ROUGHNESS = 0.03;
-const REF_HEIGHT = 50;
+import {
+  LAYER_HEIGHTS,
+  MAX_ITERATIONS,
+  DIVERGENCE_THRESHOLD,
+  RELAXATION_ALPHA,
+  SURFACE_ROUGHNESS,
+  REF_HEIGHT,
+} from "./coefficients.ts";
 
 // Interpolate Sx between two nearest precomputed sectors, or compute from scratch
 function interpolateSx(

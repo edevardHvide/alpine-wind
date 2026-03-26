@@ -2,14 +2,15 @@ import type { ElevationGrid } from "../types/terrain.ts";
 import type { WindField, WindParams } from "../types/wind.ts";
 import type { SnowDepthGrid } from "../types/snow.ts";
 import { clamp, smoothstep } from "../utils/math.ts";
-
-const BASE_SNOWFALL_CM = 30;
-const KARMAN_DRAG_COEFF = 0.04;
-const POWDER_TEMP_MIN = -10;
-const POWDER_TEMP_MAX = -5;
-const SKIABLE_SLOPE_MIN = 25;
-const SKIABLE_SLOPE_MAX = 45;
-const ADVECTION_ITERATIONS = 12;
+import {
+  BASE_SNOWFALL_CM,
+  KARMAN_DRAG_COEFF,
+  POWDER_TEMP_MIN,
+  POWDER_TEMP_MAX,
+  SKIABLE_SLOPE_MIN,
+  SKIABLE_SLOPE_MAX,
+  ADVECTION_ITERATIONS,
+} from "./coefficients.ts";
 
 // Li & Pomeroy 1997 — friction velocity threshold by temperature
 function thresholdFrictionVelocity(tempC: number): number {
