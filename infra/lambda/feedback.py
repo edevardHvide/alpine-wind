@@ -5,6 +5,10 @@ import urllib.request
 GITHUB_REPO = "edevardHvide/pow-predictor"
 
 
+def _log(level, message, **extra):
+    print(json.dumps({"level": level, "message": message, **extra}, default=str))
+
+
 def lambda_handler(event, context):
     headers = {
         "Content-Type": "application/json",
@@ -54,13 +58,15 @@ def lambda_handler(event, context):
                 "body": json.dumps({"ok": True, "number": data.get("number")}),
             }
     except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")[:200]
+        err_body = e.read().decode("utf-8", errors="replace")[:500]
+        _log("error", "GitHub API error", status=e.code, response=err_body)
         return {
             "statusCode": 502,
             "headers": headers,
-            "body": json.dumps({"error": f"GitHub API error ({e.code}): {err_body}"}),
+            "body": json.dumps({"error": f"GitHub API error ({e.code})"}),
         }
     except Exception as e:
+        _log("error", "Request failed", error=str(e))
         return {
             "statusCode": 502,
             "headers": headers,

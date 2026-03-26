@@ -36,11 +36,16 @@ resource "aws_iam_user_policy" "deploy" {
         Effect = "Allow"
         Action = [
           "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
           "lambda:UpdateFunctionCode",
           "lambda:UpdateFunctionConfiguration",
           "lambda:InvokeFunction",
         ]
-        Resource = aws_lambda_function.nve_proxy.arn
+        Resource = [
+          aws_lambda_function.nve_proxy.arn,
+          aws_lambda_function.conditions_summary.arn,
+          aws_lambda_function.feedback.arn,
+        ]
       },
       {
         Sid    = "LogsRead"
@@ -49,8 +54,9 @@ resource "aws_iam_user_policy" "deploy" {
           "logs:DescribeLogGroups",
           "logs:DescribeLogStreams",
           "logs:GetLogEvents",
+          "logs:FilterLogEvents",
         ]
-        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${aws_lambda_function.nve_proxy.function_name}:*"
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*:*"
       },
     ]
   })
