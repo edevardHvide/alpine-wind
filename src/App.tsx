@@ -291,6 +291,7 @@ export default function App() {
       setSelectionMode(true);
       setSelectedPoint(null);
       setShowConfirmDialog(false);
+      setDepthProbe(null);
     }
   }, [searchedMountain, startPrefetch]);
 
@@ -326,6 +327,7 @@ export default function App() {
     confirmDialogRef.current = false;
     setShowConfirmDialog(false);
     setSelectionMode(false);
+    setDepthProbe(null);
     clearOverlays();
     clearSimulation();
 
@@ -378,6 +380,7 @@ export default function App() {
     historicalSim.reset();
     setSelectionMode(false);
     setSelectedPoint(null);
+    setDepthProbe(null);
     confirmDialogRef.current = false;
     setShowConfirmDialog(false);
     lastRenderedStep.current = -1;
