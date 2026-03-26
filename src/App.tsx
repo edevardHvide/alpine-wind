@@ -107,7 +107,7 @@ export default function App() {
     const key = `${params.direction}-${params.speed}-${params.temperature}`;
     if (key === prevKey.current) return;
     prevKey.current = key;
-    const timer = setTimeout(() => runSimulation(params), 150);
+    const timer = setTimeout(() => runSimulation(params, devOverridesRef.current), 150);
     return () => clearTimeout(timer);
   }, [params.direction, params.speed, params.temperature, terrainReady, historicalMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -404,9 +404,62 @@ export default function App() {
     const gi = row * terrain.cols + col;
     const elevation = terrain.heights[gi];
 
-    // Default mode: show elevation + coords, no depth/weather
+    // Default mode: show elevation + current weather, no depth
     if (!historicalMode || !historicalSim.steps) {
-      setDepthProbe({ lat, lng, depthCm: -1, screenX, screenY, elevation });
+      const weather = backgroundWeatherRef.current;
+      let temp: number | undefined;
+      let precip: number | undefined;
+      let windSpeed: number | undefined;
+      let windDir: number | undefined;
+
+      if (weather && weather.stations.length > 0) {
+        // Use the most recent timestamp as "current"
+        const dataIdx = weather.timestamps.length - 1;
+        const stations = weather.stations;
+
+        if (stations.length === 1) {
+          temp = stations[0].temp[dataIdx];
+          precip = stations[0].precip[dataIdx];
+          windSpeed = stations[0].windSpeed[dataIdx];
+          windDir = stations[0].windDir[dataIdx];
+        } else {
+          let totalW = 0;
+          let wTemp = 0, wPrecip = 0, wWindSpeed = 0;
+          let sinSum = 0, cosSum = 0;
+
+          for (const s of stations) {
+            const dlat = lat - s.lat;
+            const dlng = (lng - s.lng) * Math.cos(lat * Math.PI / 180);
+            const dist2 = dlat * dlat + dlng * dlng;
+            const w = dist2 < 1e-10 ? 1e10 : 1 / dist2;
+            totalW += w;
+            wTemp += s.temp[dataIdx] * w;
+            wPrecip += s.precip[dataIdx] * w;
+            wWindSpeed += s.windSpeed[dataIdx] * w;
+            const rad = s.windDir[dataIdx] * Math.PI / 180;
+            sinSum += Math.sin(rad) * w;
+            cosSum += Math.cos(rad) * w;
+          }
+
+          temp = wTemp / totalW;
+          precip = wPrecip / totalW;
+          windSpeed = wWindSpeed / totalW;
+          windDir = ((Math.atan2(sinSum / totalW, cosSum / totalW) * 180 / Math.PI) + 360) % 360;
+
+          // Lapse rate correction
+          let refAlt = 0;
+          for (const s of stations) {
+            const dlat2 = lat - s.lat;
+            const dlng2 = (lng - s.lng) * Math.cos(lat * Math.PI / 180);
+            const d2 = dlat2 * dlat2 + dlng2 * dlng2;
+            const w2 = d2 < 1e-10 ? 1e10 : 1 / d2;
+            refAlt += s.altitude * (w2 / totalW);
+          }
+          temp += (elevation - refAlt) * (-6.5 / 1000);
+        }
+      }
+
+      setDepthProbe({ lat, lng, depthCm: -1, screenX, screenY, elevation, temp, precip, windSpeed, windDir });
       return;
     }
 
@@ -574,8 +627,12 @@ export default function App() {
 
   const handleDevApply = useCallback((overrides: CoefficientsOverride) => {
     devOverridesRef.current = overrides;
+    if (!terrainReady) {
+      console.warn("[Dev] No terrain loaded — select a mountain first");
+      return;
+    }
     runSimulation(params, overrides);
-  }, [params, runSimulation]);
+  }, [params, runSimulation, terrainReady]);
 
   return (
     <div className="relative w-full h-full">
