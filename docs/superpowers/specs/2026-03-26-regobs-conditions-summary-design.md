@@ -2,12 +2,12 @@
 
 ## Overview
 
-Add an AI-powered conditions summary to the snow depth tooltip. When a user clicks a point in simulation mode, they see the existing depth/weather data instantly. An "Analyse conditions" button fetches nearby RegObs field observations and Varsom avalanche forecasts, scores them for relevance to the clicked terrain, sends them to a Claude-powered Lambda, and appends a structured summary below the existing tooltip content.
+Add an AI-powered conditions summary to the snow depth tooltip. When a user clicks a point in simulation mode, they see the existing depth/weather data instantly. An "Analyze conditions" button fetches nearby RegObs field observations and Varsom avalanche forecasts, scores them for relevance to the clicked terrain, sends them to a Claude-powered Lambda, and appends a structured summary below the existing tooltip content.
 
 ## Data Flow
 
 1. User clicks point in sim mode -> existing probe fires (instant depth, elevation, weather)
-2. Tooltip displays with existing data + "Analyse conditions" button
+2. Tooltip displays with existing data + "Analyze conditions" button
 3. Button click triggers (in parallel):
    - Browser fetches RegObs observations (7 days, 30km radius)
    - Browser fetches Varsom avalanche forecast for coordinates
@@ -21,9 +21,11 @@ Add an AI-powered conditions summary to the snow depth tooltip. When a user clic
 
 Pure browser-side function in `src/utils/relevance.ts`. Takes clicked point characteristics (all available from terrain grid) and an observation, returns a 0-1 score.
 
-### Inputs from terrain grid (already loaded)
+### Inputs
 
-- Clicked point: lat, lng, elevation, aspect (radians), slope, Sx value
+- Clicked point: lat, lng, elevation, aspect (radians), slope
+
+**Note:** The main thread terrain grid has empty arrays for slopes/aspects/Sx — these are computed only in the Web Worker. At probe time, compute aspect and slope for the clicked cell on the main thread using central finite differences on the 4 neighboring height values (same math as `computeDerivatives` in `terrain-processing.ts`, just for 1 cell). This is a few lines and runs in microseconds.
 
 ### Four dimensions (each 0 to 1)
 
@@ -74,9 +76,9 @@ Map observation lat/lng to nearest terrain grid cell to get aspect and elevation
 
 ### Varsom API — `src/api/varsom.ts`
 
-- `GET https://api.varsom.no/RegionSummary/Detail/{lat}/{lon}/2/{from}/{to}`
+- `GET https://api.varsom.no/RegionSummary/Detail/{lat}/{lon}/{lang}/{from}/{to}` (lang=1 for Norwegian, 2 for English; dates as `YYYY-MM-DD`)
 - Returns: danger level, avalanche problems, mountain weather summary
-- No auth required, CORS-enabled
+- No auth required. CORS support needs verification during implementation — if Varsom blocks browser-origin requests, proxy through the existing API Gateway (add a route like the NVE proxy)
 - localStorage cache: 1-hour TTL, keyed by coordinates + date range
 
 ## Lambda + Infrastructure
@@ -85,9 +87,9 @@ Map observation lat/lng to nearest terrain grid cell to get aspect and elevation
 
 - Receives POST: clicked point characteristics, scored observations array, Varsom forecast
 - Builds structured prompt (system + user message)
-- Calls Anthropic Python SDK with `claude-haiku-4-5-20251001`
+- Calls Claude via raw HTTP POST to `https://api.anthropic.com/v1/messages` using `urllib` (stdlib only — no Anthropic SDK needed, keeps the same packaging pattern as the NVE proxy: single `.py` file zipped)
+- Model: `claude-haiku-4-5-20251001`, `max_tokens: 1024` (bounds per-request cost)
 - Returns summary as JSON
-- ~50 lines, `anthropic` as only dependency
 - API key from Lambda env var (`ANTHROPIC_API_KEY`)
 
 ### System prompt structure
@@ -103,7 +105,7 @@ Instructs Claude to return 4 sections:
 
 - Clicked point: lat, lon, elevation, aspect, slope angle, Sx exposure value
 - Varsom regional forecast: danger level, avalanche problems, mountain weather
-- Scored observations (sorted by relevance): relevance score, distance, elevation diff, aspect diff, hours since observation, observer competency, observation data
+- Scored observations (sorted by relevance, trimmed to only fields Claude needs): relevance score, distance, elevation diff, aspect diff, hours since observation, observer competency, and extracted observation fields (drift category, snow surface type, danger signs, avalanche activity, free text comments). Raw RegObs response is parsed and trimmed browser-side before sending to Lambda to minimize prompt tokens.
 
 ### System prompt guidance
 
@@ -114,15 +116,18 @@ Instructs Claude to return 4 sections:
 - New Lambda resource + IAM role (clone NVE proxy pattern)
 - New API Gateway route: `POST /api/conditions-summary`
 - Same API Gateway (`aws_apigatewayv2_api.nve_proxy`), same deployment
-- Lambda timeout: 30s, memory: 256MB (Anthropic SDK needs more than the 128MB NVE proxy)
-- Vite dev proxy: add `/api/conditions-summary` route
+- Lambda timeout: 30s, memory: 128MB (stdlib-only, same as NVE proxy)
+- API Gateway CORS: update `allow_methods` to include `POST` and `OPTIONS` (currently only allows `GET`)
+- API Gateway throttling: 10 requests/second, 100 burst (prevents runaway Anthropic costs)
+- Vite dev proxy: add `/api/conditions-summary` route targeting the deployed Lambda URL
+- Production URL: same API Gateway base URL already used by `nve.ts` — share the constant
 
 ## UI Changes
 
 ### SnowDepthTooltip expansion
 
-- "Analyse conditions" button below existing depth/weather content
-- On click: button becomes "Analysing conditions..." with small spinner
+- "Analyze conditions" button below existing depth/weather content
+- On click: button becomes "Analyzing conditions..." with small spinner
 - On success: subtle divider, then summary sections appended below
 - Summary sections: compact styled blocks (bold heading, body text) — no markdown parsing, structured JSON from Lambda mapped to JSX
 - Tooltip becomes scrollable (`max-h` + `overflow-y-auto`) when expanded
@@ -131,7 +136,7 @@ Instructs Claude to return 4 sections:
 ### Mobile
 
 - Expanded tooltip may anchor to bottom of screen (bottom sheet style) to avoid overflow
-- "Analyse conditions" button gets larger touch target (20px, matching range slider pattern)
+- "Analyze conditions" button gets larger touch target (20px, matching range slider pattern)
 
 ### Visibility gate
 
@@ -145,15 +150,16 @@ Button only appears in historical sim mode (same condition as depth probe).
 - **Summer / no snow:** Button appears but summary says "No winter observations available for this period."
 - **Observation outside loaded terrain grid:** Fall back to reported elevation, aspect factor = 0.5 (neutral).
 - **Lambda timeout (30s):** User sees spinner then error with retry option.
-- **User clicks elsewhere:** New click dismisses tooltip entirely (existing behavior), cancels in-flight request.
+- **User clicks elsewhere:** New click dismisses tooltip entirely (existing behavior), cancels in-flight request via `AbortController`. Store controller in a ref, abort on tooltip close or new click.
 
 ## Files to Create/Modify
 
 ### New files
 - `src/api/regobs.ts` — RegObs API client
 - `src/api/varsom.ts` — Varsom API client
-- `src/utils/relevance.ts` — Relevance scoring module
-- `infra/lambda/conditions_summary.py` — Claude summary Lambda
+- `src/utils/relevance.ts` — Relevance scoring module (+ single-cell aspect/slope computation)
+- `src/types/conditions.ts` — TypeScript interfaces for RegObs parsed observations, Lambda request/response, relevance scoring
+- `infra/lambda/conditions_summary.py` — Claude summary Lambda (stdlib-only, single file)
 
 ### Modified files
 - `src/components/SnowDepthTooltip.tsx` — Add button, expanded state, summary display
@@ -161,3 +167,4 @@ Button only appears in historical sim mode (same condition as depth probe).
 - `infra/apigateway.tf` — New POST route
 - `infra/lambda.tf` — New Lambda resource + IAM
 - `vite.config.ts` — Dev proxy for new route
+- `CLAUDE.md` — Document the new feature
