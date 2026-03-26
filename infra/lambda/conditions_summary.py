@@ -21,7 +21,7 @@ Return a JSON object with exactly these 4 keys:
 
 Prioritize observations with high relevance scores and high observer competency (5=expert, 1=novice). If the most relevant observations conflict, say so. If no observations have relevance above 0.5, state that the assessment is based on limited nearby data and the regional forecast.
 
-Return ONLY valid JSON, no markdown or extra text."""
+Return ONLY the raw JSON object. Do NOT wrap it in markdown code blocks. Do NOT include any text before or after the JSON."""
 
 
 def build_user_message(body):
@@ -135,9 +135,16 @@ def lambda_handler(event, context):
         # Extract text from Claude response
         text = result["content"][0]["text"]
 
+        # Strip markdown code fences if present
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].strip()
+
         # Try to parse as JSON; fall back to wrapping raw text
         try:
-            summary = json.loads(text)
+            summary = json.loads(cleaned)
         except json.JSONDecodeError:
             summary = {
                 "windTransport": text[:500],
