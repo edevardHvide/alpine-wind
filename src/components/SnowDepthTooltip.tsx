@@ -164,13 +164,30 @@ export default function SnowDepthTooltip({
             {summary && (
               <>
                 <div className="h-px bg-sky-400/30 my-2" />
-                <div className="space-y-1.5 text-xs">
+                <p className="text-[10px] text-slate-500 leading-snug">
+                  AI summary based on nearby{" "}
+                  <a href="https://regobs.no" target="_blank" rel="noopener noreferrer" className="text-sky-500 active:text-sky-400">RegObs</a>
+                  {" "}observations. May be inaccurate — see{" "}
+                  <a href="https://varsom.no" target="_blank" rel="noopener noreferrer" className="text-sky-500 active:text-sky-400">varsom.no</a>
+                  {" "}for official forecasts.
+                </p>
+                <div className="space-y-1.5 text-xs mt-1.5">
                   {summary.dataNotice && (
                     <p className="text-amber-400 font-medium">{summary.dataNotice}</p>
                   )}
                   <p className="text-slate-300"><span className="text-sky-400">Wind</span> {summary.windTransport}</p>
                   <p className="text-slate-300"><span className="text-sky-400">Surface</span> {summary.surfaceConditions}</p>
                   <p className="text-slate-300"><span className="text-sky-400">Stability</span> {summary.stabilityConcerns}</p>
+                  {summary.topObsUrl && (
+                    <a
+                      href={summary.topObsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block text-sky-400 active:text-sky-300 mt-1"
+                    >
+                      Top observation on RegObs →
+                    </a>
+                  )}
                 </div>
               </>
             )}
@@ -298,13 +315,30 @@ export default function SnowDepthTooltip({
           {summary && (
             <>
               <div className="h-px bg-sky-400/30 my-2" />
-              <div className="space-y-1.5 text-[11px]">
+              <p className="text-[10px] text-slate-500 leading-snug">
+                AI summary based on nearby{" "}
+                <a href="https://regobs.no" target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:text-sky-400">RegObs</a>
+                {" "}observations. May be inaccurate — see{" "}
+                <a href="https://varsom.no" target="_blank" rel="noopener noreferrer" className="text-sky-500 hover:text-sky-400">varsom.no</a>
+                {" "}for official forecasts.
+              </p>
+              <div className="space-y-1.5 text-[11px] mt-1.5">
                 {summary.dataNotice && (
                   <p className="text-amber-400 font-medium">{summary.dataNotice}</p>
                 )}
                 <p className="text-slate-300"><span className="text-sky-400">Wind</span> {summary.windTransport}</p>
                 <p className="text-slate-300"><span className="text-sky-400">Surface</span> {summary.surfaceConditions}</p>
                 <p className="text-slate-300"><span className="text-sky-400">Stability</span> {summary.stabilityConcerns}</p>
+                {summary.topObsUrl && (
+                  <a
+                    href={summary.topObsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block text-sky-400 hover:text-sky-300 mt-1"
+                  >
+                    Top observation on RegObs →
+                  </a>
+                )}
               </div>
             </>
           )}

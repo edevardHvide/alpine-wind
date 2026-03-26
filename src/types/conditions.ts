@@ -60,4 +60,5 @@ export interface ConditionsSummary {
   windTransport: string;
   surfaceConditions: string;
   stabilityConcerns: string;
+  topObsUrl?: string;
 }

@@ -636,6 +636,10 @@ export default function App() {
       if (!resp.ok) throw new Error(`${resp.status}`);
       const summary: ConditionsSummary = await resp.json();
 
+      if (scored.length > 0) {
+        summary.topObsUrl = `https://regobs.no/registration/${scored[0].observation.id}`;
+      }
+
       setConditionsSummary(summary);
       setAnalysisLoading(false);
     } catch (err: any) {
