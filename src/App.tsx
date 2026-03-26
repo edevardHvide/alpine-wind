@@ -311,15 +311,15 @@ export default function App() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enter selection mode for historical simulation
-  // If user already searched a mountain, skip selection and go straight to confirm
-  const enterHistoricalMode = useCallback(() => {
-    if (searchedMountain) {
-      setSelectedPoint(searchedMountain);
+  // Use known location (searched mountain or clicked point) to skip selection
+  const enterHistoricalMode = useCallback((clickedPoint?: { lat: number; lng: number }) => {
+    const point = searchedMountain ?? (clickedPoint ? { ...clickedPoint, name: `${clickedPoint.lat.toFixed(4)}°N, ${clickedPoint.lng.toFixed(4)}°E` } : null);
+    if (point) {
+      setSelectedPoint(point);
       setShowConfirmDialog(true);
       confirmDialogRef.current = true;
-      // Reuse in-flight prefetch if already started on mountain select
       if (!prefetchRef.current) {
-        startPrefetch(searchedMountain.lat, searchedMountain.lng);
+        startPrefetch(point.lat, point.lng);
       }
     } else {
       setSelectionMode(true);
@@ -792,7 +792,7 @@ export default function App() {
           analysisLoading={analysisLoading}
           analysisError={analysisError}
           summary={conditionsSummary}
-          onSimulate={!historicalMode && terrainReady ? () => { setDepthProbe(null); enterHistoricalMode(); } : undefined}
+          onSimulate={!historicalMode && terrainReady ? () => { const p = depthProbe; setDepthProbe(null); enterHistoricalMode(p ? { lat: p.lat, lng: p.lng } : undefined); } : undefined}
         />
       )}
 
