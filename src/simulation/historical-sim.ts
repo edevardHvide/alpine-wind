@@ -4,6 +4,17 @@ import type { WindField, WindParams } from "../types/wind.ts";
 import type { SpatialWeatherTimeSeries, WeatherStation } from "../api/nve.ts";
 import { solveWindField } from "./wind-solver.ts";
 import { computeSnowAccumulation } from "./snow-model.ts";
+import {
+  SNOW_WATER_RATIO,
+  MELT_DEGREE_FACTOR,
+  RAIN_MELT_FACTOR,
+  SUB_STEPS,
+  THREE_HOURS_MS,
+  WIND_DIR_CHANGE_THRESHOLD,
+  WIND_SPEED_CHANGE_THRESHOLD,
+  LAPSE_RATE,
+  PRECIP_ELEV_FACTOR,
+} from "./coefficients.ts";
 
 export interface HistoricalStep {
   timestamp: Date;
@@ -14,15 +25,6 @@ export interface HistoricalStep {
   snowGrid: SnowDepthGrid;
   windField: WindField;
 }
-
-const SNOW_WATER_RATIO = 10; // 1mm water = 10mm (1cm) snow
-const MELT_DEGREE_FACTOR = 0.5; // mm water equiv per °C per 3h step
-const RAIN_MELT_FACTOR = 0.2; // mm additional melt per mm rain
-const SUB_STEPS = 4; // sub-steps per 3h interval for smooth playback
-const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
-
-const WIND_DIR_CHANGE_THRESHOLD = 15; // degrees
-const WIND_SPEED_CHANGE_THRESHOLD = 2; // m/s
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -41,11 +43,6 @@ function angleDiff(a: number, b: number): number {
 const yieldToUI = () => new Promise<void>((r) => setTimeout(r, 0));
 
 // ── IDW interpolation with lapse-rate downscaling ────
-
-// Environmental lapse rate: -6.5°C per 1000m elevation gain
-const LAPSE_RATE = -6.5 / 1000;
-// Orographic precipitation enhancement: +8% per 100m above reference
-const PRECIP_ELEV_FACTOR = 0.08 / 100;
 
 interface IDWWeights {
   /** For each grid cell: array of { stationIndex, weight } */
