@@ -36,7 +36,7 @@ Single-page React app with Web Worker computation (no backend for simulation):
 src/
   components/        CesiumViewer, ControlPanel, WindCompass, SnowLegend,
                      TimelineBar, PlaceSearch, SnowDepthTooltip, MapCompass,
-                     ScaleBar, WelcomePage
+                     ScaleBar, WelcomePage, InstallBanner, FeedbackModal
   simulation/        wind-solver, snow-model, terrain-sampler, terrain-processing,
                      regions, historical-sim, simulation.worker, worker-protocol
   rendering/         wind-layer-adapter, snow-overlay, color-scales
@@ -121,25 +121,24 @@ When passing per-cell snowfall arrays to `computeSnowAccumulation`, the global `
 
 `SnowOverlayManager` class in `snow-overlay.ts` handles smooth transitions:
 
+- **Pre-rendering:** `prerender(stepIndex, snow, terrain)` renders the next step in background while current displays
+- **Instant transitions:** `showStep()` uses pre-rendered provider if available (zero async in critical path)
+- **Adaptive crossfade:** Duration auto-scales with playback speed (60% of step interval, clamped 80-400ms)
 - **Double-buffering:** New imagery layer is added BEFORE old one is removed (no gap/blink)
-- **Crossfade:** 300ms cubic ease-out alpha transition between old and new layers
-- **Frame interpolation:** During adjacent-step playback, snow depth is lerped over 250ms via `renderInterpolated()`
-- **Scrubbing:** Non-adjacent jumps use instant crossfade (no interpolation delay)
-- **Render generation counter:** `renderGen` increments per render call; stale async renders are discarded after `fromUrl()` resolves
-- **Deferred removal:** `renderInterpolated()` defers old layer removal by 1 frame via `requestAnimationFrame` so Cesium composites the new tile first
-- **Stable color stats:** `computeColorStats()` precomputes mean/spread from the TARGET step once per transition, passed to all interpolation frames to prevent color shimmer
+- **Generation counters:** Separate `renderGen` and `prerenderGen` prevent stale async renders from displaying
+- **Manual mode:** `render()` still uses standard crossfade (300ms) for one-off renders
 
 ### IMPORTANT: Cesium imagery layer lifecycle
 
 Never call `removeSnowOverlay` before the new layer is ready. The async `SingleTileImageryProvider.fromUrl()` creates a gap between remove and add, causing visible blinking. Always add-then-remove (double-buffer pattern).
 
-### IMPORTANT: Async renders in RAF loops
+### IMPORTANT: Do NOT use per-frame renderInterpolated
 
-`renderInterpolated()` is async (awaits `SingleTileImageryProvider.fromUrl()`). The RAF animation loop MUST `await` each call before scheduling the next frame. Without this, multiple overlapping async renders race and resolve out-of-order, adding/removing Cesium layers chaotically and causing flicker.
+The old approach created a new `SingleTileImageryProvider` every RAF frame during playback (canvas paint → toDataURL → fromUrl → add layer → remove old). This caused visible flashing at any playback speed because the async overhead exceeded frame budget. The current pre-render + crossfade approach avoids all async work during the visible transition.
 
 ## Historical Simulation Mode
 
-User flow: Search mountain → terrain loads + weather prefetch + background sim auto-starts → click "Run Pow Simulation" → confirm → instant (or near-instant) timeline playback.
+User flow: Search/click mountain → terrain loads + weather prefetch + background sim auto-starts → click map to see weather → "Run Simulation" in weather tooltip → confirm → instant (or near-instant) timeline playback. The simulate button lives inside `SnowDepthTooltip` alongside "Analyze RegObs" — no separate floating button.
 
 ### Key Implementation Details
 
