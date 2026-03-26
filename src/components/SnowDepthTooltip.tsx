@@ -1,3 +1,5 @@
+import type { ConditionsSummary } from "../types/conditions";
+
 interface SnowDepthTooltipProps {
   depthCm: number;
   lat: number;
@@ -10,6 +12,11 @@ interface SnowDepthTooltipProps {
   windDir?: number;
   elevation?: number;
   onClose: () => void;
+  // Conditions analysis
+  onAnalyze?: () => void;
+  analysisLoading?: boolean;
+  analysisError?: string | null;
+  summary?: ConditionsSummary | null;
 }
 
 function windDirLabel(deg: number): string {
@@ -29,6 +36,10 @@ export default function SnowDepthTooltip({
   windDir,
   elevation,
   onClose,
+  onAnalyze,
+  analysisLoading,
+  analysisError,
+  summary,
 }: SnowDepthTooltipProps) {
   const style = {
     left: `${screenX + 16}px`,
@@ -36,10 +47,11 @@ export default function SnowDepthTooltip({
   };
 
   const hasWeather = temp !== undefined;
+  const showAnalyzeButton = onAnalyze && !summary && !analysisLoading && !analysisError;
 
   return (
     <div
-      className="absolute z-30 glass-panel text-white px-4 py-3 pointer-events-auto border-l-[3px] border-l-sky-400 min-w-[180px]"
+      className="absolute z-30 glass-panel text-white px-4 py-3 pointer-events-auto border-l-[3px] border-l-sky-400 min-w-[180px] max-w-[320px] max-h-[70vh] overflow-y-auto"
       style={style}
       onClick={(e) => e.stopPropagation()}
     >
@@ -94,6 +106,68 @@ export default function SnowDepthTooltip({
               <span>{Math.round(elevation)} m</span>
             )}
           </div>
+
+          {/* Analyze conditions button */}
+          {showAnalyzeButton && (
+            <>
+              <div className="h-px bg-slate-700/50 my-2" />
+              <button
+                onClick={onAnalyze}
+                className="w-full text-xs text-sky-400 hover:text-sky-300 hover:bg-sky-400/10 rounded px-2 py-1.5 transition-colors text-center"
+              >
+                Analyze conditions
+              </button>
+            </>
+          )}
+
+          {/* Loading state */}
+          {analysisLoading && (
+            <>
+              <div className="h-px bg-slate-700/50 my-2" />
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-1">
+                <div className="w-3 h-3 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+                Analyzing conditions...
+              </div>
+            </>
+          )}
+
+          {/* Error state */}
+          {analysisError && (
+            <>
+              <div className="h-px bg-slate-700/50 my-2" />
+              <button
+                onClick={onAnalyze}
+                className="w-full text-xs text-amber-400 hover:text-amber-300 rounded px-2 py-1.5 transition-colors text-center"
+              >
+                {analysisError} — try again
+              </button>
+            </>
+          )}
+
+          {/* Summary display */}
+          {summary && (
+            <>
+              <div className="h-px bg-sky-400/30 my-2" />
+              <div className="space-y-2 text-[11px]">
+                <div>
+                  <p className="font-semibold text-sky-300 mb-0.5">Wind & Transport</p>
+                  <p className="text-slate-300 leading-relaxed">{summary.windTransport}</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-sky-300 mb-0.5">Surface</p>
+                  <p className="text-slate-300 leading-relaxed">{summary.surfaceConditions}</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-sky-300 mb-0.5">Stability</p>
+                  <p className="text-slate-300 leading-relaxed">{summary.stabilityConcerns}</p>
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-500 mb-0.5">Confidence</p>
+                  <p className="text-slate-400 leading-relaxed italic">{summary.confidence}</p>
+                </div>
+              </div>
+            </>
+          )}
         </div>
         <button
           onClick={onClose}
