@@ -84,7 +84,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     allowed_methods          = ["GET", "HEAD", "OPTIONS"]
     cached_methods           = ["GET", "HEAD"]
     cache_policy_id          = aws_cloudfront_cache_policy.api_cache.id
-    origin_request_policy_id = "b689b0a0-8776-4f0b-a46d-c9bde0b39e73" # AllViewerExceptHostHeader
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # AllViewerExceptHostHeader
   }
 
   # POST routes (conditions-summary, feedback, errors) — no caching, forward everything
@@ -96,7 +96,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     allowed_methods          = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods           = ["GET", "HEAD"]
     cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled
-    origin_request_policy_id = "b689b0a0-8776-4f0b-a46d-c9bde0b39e73" # AllViewerExceptHostHeader
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # AllViewerExceptHostHeader
   }
 
   default_cache_behavior {
