@@ -199,6 +199,11 @@ resource "aws_iam_role_policy" "monitor_logs_read" {
           "logs:DescribeLogGroups",
         ]
         Resource = "arn:aws:logs:${var.aws_region}:*:log-group:/aws/lambda/${var.project_name}-*:*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:GetMetricData"]
+        Resource = "*"
       }
     ]
   })
