@@ -8,6 +8,26 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
   signing_protocol                  = "sigv4"
 }
 
+# Redirect CloudFront default domain to custom domain
+resource "aws_cloudfront_function" "redirect_default_domain" {
+  name    = "${var.project_name}-redirect"
+  runtime = "cloudfront-js-2.0"
+  publish = true
+  code    = <<-EOF
+    function handler(event) {
+      var host = event.request.headers.host.value;
+      if (host.endsWith('.cloudfront.net')) {
+        return {
+          statusCode: 301,
+          statusDescription: 'Moved Permanently',
+          headers: { location: { value: 'https://powpredictor.info' + event.request.uri } }
+        };
+      }
+      return event.request;
+    }
+  EOF
+}
+
 resource "aws_cloudfront_distribution" "frontend" {
   comment             = "Pow Predictor - Snow redistribution simulator"
   enabled             = true
@@ -30,6 +50,11 @@ resource "aws_cloudfront_distribution" "frontend" {
     allowed_methods        = ["GET", "HEAD"]
     cached_methods         = ["GET", "HEAD"]
     cache_policy_id        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.redirect_default_domain.arn
+    }
   }
 
   # SPA: route 403/404 to index.html for client-side routing

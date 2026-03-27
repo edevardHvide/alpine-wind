@@ -69,13 +69,21 @@ async function fetchTheme(
   x: number, y: number, start: string, end: string, theme: string,
 ): Promise<{ data: number[]; altitude: number }> {
   const url = `${API_BASE}/${x}/${y}/${start}/${end}/${theme}.json`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`NVE API error: ${res.status} for ${theme}`);
-  const json = await res.json();
-  // Replace NoDataValue with 0
-  const noData = json.NoDataValue ?? 65535;
-  const data = (json.Data as number[]).map((v) => (v === noData ? 0 : v));
-  return { data, altitude: json.Altitude ?? 0 };
+  // Retry with backoff for transient errors (503 from API Gateway throttling)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url);
+    if (res.status === 503 && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+      continue;
+    }
+    if (!res.ok) throw new Error(`NVE API error: ${res.status} for ${theme}`);
+    const json = await res.json();
+    // Replace NoDataValue with 0
+    const noData = json.NoDataValue ?? 65535;
+    const data = (json.Data as number[]).map((v) => (v === noData ? 0 : v));
+    return { data, altitude: json.Altitude ?? 0 };
+  }
+  throw new Error(`NVE API error: 503 for ${theme} after retries`);
 }
 
 // Try fetching from center point, fall back to nearby offsets if center is ocean
@@ -268,29 +276,33 @@ export async function fetchSpatialWeather(
   const samplePoints = generateSamplePoints(bboxWest, bboxSouth, bboxEast, bboxNorth);
   console.log(`Spatial weather: fetching ${samplePoints.length} stations across bbox`);
 
-  // ── Phase 1: NVE history ──
-  onProgress?.("Fetching NVE history...", 0);
-  let nveCompleted = 0;
-
-  const nvePromises = samplePoints.map(async (pt) => {
-    const station = await fetchStation(pt.lat, pt.lng, fmt(histStart), fmt(histEnd));
-    nveCompleted++;
-    onProgress?.(`Fetching NVE history... (${nveCompleted}/${samplePoints.length})`, (nveCompleted / samplePoints.length) * 40);
-    return station;
-  });
-
-  // ── Phase 2: MET forecast (in parallel with NVE) ──
+  // ── Phase 2: MET forecast (start early, runs in parallel with NVE batches) ──
   const { fetchMetForecastGrid } = await import("./met.ts");
   const metPromise = fetchMetForecastGrid(samplePoints, (stage, pct) => {
     onProgress?.(stage, 40 + pct * 0.4);
   });
 
-  const [nveResults, metResult] = await Promise.all([
-    Promise.all(nvePromises),
-    metPromise,
-  ]);
+  // ── Phase 1: NVE history (batched to avoid Lambda concurrency limit) ──
+  onProgress?.("Fetching NVE history...", 0);
+  let nveCompleted = 0;
+  const STATION_BATCH = 2; // Each station fires 4 parallel requests; 2×4=8 stays within Lambda limits
+  const nveStationResults: (WeatherStation | null)[] = [];
+  for (let i = 0; i < samplePoints.length; i += STATION_BATCH) {
+    const batch = samplePoints.slice(i, i + STATION_BATCH);
+    const batchResults = await Promise.all(
+      batch.map(async (pt) => {
+        const station = await fetchStation(pt.lat, pt.lng, fmt(histStart), fmt(histEnd));
+        nveCompleted++;
+        onProgress?.(`Fetching NVE history... (${nveCompleted}/${samplePoints.length})`, (nveCompleted / samplePoints.length) * 40);
+        return station;
+      }),
+    );
+    nveStationResults.push(...batchResults);
+  }
 
-  const nveStations = nveResults.filter((s): s is WeatherStation => s !== null);
+  const metResult = await metPromise;
+
+  const nveStations = nveStationResults.filter((s): s is WeatherStation => s !== null);
   console.log(`NVE: ${nveStations.length}/${samplePoints.length} stations, MET: ${metResult.stations.length} stations`);
 
   // Fallback: if NVE fails, try center-only
