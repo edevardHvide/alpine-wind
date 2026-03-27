@@ -68,11 +68,11 @@ export default function SnowDepthTooltip({
   if (isMobile) {
     return (
       <div
-        className="fixed z-30 bottom-0 left-0 right-0 glass-panel text-white px-4 py-3 pb-[env(safe-area-inset-bottom,8px)] pointer-events-auto border-t border-t-sky-400/40 max-h-[60vh] overflow-y-auto"
+        className="fixed z-30 bottom-0 left-0 right-0 glass-panel text-white px-4 py-3 pb-[env(safe-area-inset-bottom,8px)] pointer-events-auto border-t border-t-sky-400/40 max-h-[60vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start gap-3">
-          <div className="flex-1">
+        <div className="flex items-start gap-3 overflow-y-auto min-h-0">
+          <div className="flex-1 overflow-y-auto min-h-0">
             {hasDepth ? (
               <>
                 <p className="text-lg font-semibold text-sky-300 tabular-nums">

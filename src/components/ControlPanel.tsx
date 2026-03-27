@@ -91,7 +91,7 @@ export default function ControlPanel({
       {/* Mobile backdrop */}
       {mobileOpen && (
         <div
-          className="md:hidden fixed inset-0 z-10 bg-slate-950/40 backdrop-blur-[2px]"
+          className="md:hidden fixed inset-0 z-20 bg-slate-950/40 backdrop-blur-[2px]"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -99,7 +99,7 @@ export default function ControlPanel({
       {/* ===== Desktop: full panel / Mobile: slide-in settings drawer ===== */}
       <div
         className={`
-          absolute z-10 glass-panel text-white p-4 md:p-5 flex flex-col gap-3 md:gap-4
+          absolute z-20 glass-panel text-white p-4 md:p-5 flex flex-col gap-3 md:gap-4
           md:top-4 md:left-4 md:w-[272px] md:translate-x-0
           top-0 left-0 w-[280px] h-full md:h-auto md:rounded-[var(--panel-radius)]
           rounded-none rounded-r-[var(--panel-radius)]
