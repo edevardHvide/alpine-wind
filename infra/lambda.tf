@@ -137,3 +137,69 @@ resource "aws_lambda_permission" "frontend_errors_apigw" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.nve_proxy.execution_arn}/*/*"
 }
+
+# --- Lambda: Monitoring Health Check ---
+
+data "archive_file" "monitor" {
+  type        = "zip"
+  source_file = "${path.module}/lambda/monitor.py"
+  output_path = "${path.module}/.build/monitor.zip"
+}
+
+resource "aws_lambda_function" "monitor" {
+  function_name    = "${var.project_name}-monitor"
+  role             = aws_iam_role.monitor.arn
+  handler          = "monitor.lambda_handler"
+  runtime          = "python3.11"
+  timeout          = 30
+  memory_size      = 128
+  filename         = data.archive_file.monitor.output_path
+  source_code_hash = data.archive_file.monitor.output_base64sha256
+}
+
+resource "aws_lambda_permission" "monitor_apigw" {
+  statement_id  = "ApiGatewayInvokeMonitor"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.monitor.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.nve_proxy.execution_arn}/*/*"
+}
+
+resource "aws_iam_role" "monitor" {
+  name = "${var.project_name}-monitor-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "lambda.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "monitor_basic" {
+  role       = aws_iam_role.monitor.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "monitor_logs_read" {
+  name = "${var.project_name}-monitor-logs-read"
+  role = aws_iam_role.monitor.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:FilterLogEvents",
+          "logs:DescribeLogGroups",
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:log-group:/aws/lambda/${var.project_name}-*:*"
+      }
+    ]
+  })
+}

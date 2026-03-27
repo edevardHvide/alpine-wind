@@ -77,13 +77,30 @@ resource "aws_apigatewayv2_route" "frontend_errors" {
   target    = "integrations/${aws_apigatewayv2_integration.frontend_errors.id}"
 }
 
+# --- Monitor route ---
+
+resource "aws_apigatewayv2_integration" "monitor" {
+  api_id                 = aws_apigatewayv2_api.nve_proxy.id
+  integration_type       = "AWS_PROXY"
+  integration_method     = "POST"
+  integration_uri        = aws_lambda_function.monitor.invoke_arn
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+}
+
+resource "aws_apigatewayv2_route" "monitor" {
+  api_id    = aws_apigatewayv2_api.nve_proxy.id
+  route_key = "GET /api/monitor"
+  target    = "integrations/${aws_apigatewayv2_integration.monitor.id}"
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.nve_proxy.id
   name        = "$default"
   auto_deploy = true
 
   default_route_settings {
-    throttling_rate_limit  = 50
-    throttling_burst_limit = 100
+    throttling_rate_limit  = 200
+    throttling_burst_limit = 500
   }
 }
