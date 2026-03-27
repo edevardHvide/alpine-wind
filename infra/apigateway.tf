@@ -60,6 +60,23 @@ resource "aws_apigatewayv2_route" "feedback" {
   target    = "integrations/${aws_apigatewayv2_integration.feedback.id}"
 }
 
+# --- Frontend Errors route ---
+
+resource "aws_apigatewayv2_integration" "frontend_errors" {
+  api_id                 = aws_apigatewayv2_api.nve_proxy.id
+  integration_type       = "AWS_PROXY"
+  integration_method     = "POST"
+  integration_uri        = aws_lambda_function.frontend_errors.invoke_arn
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 5000
+}
+
+resource "aws_apigatewayv2_route" "frontend_errors" {
+  api_id    = aws_apigatewayv2_api.nve_proxy.id
+  route_key = "POST /api/errors"
+  target    = "integrations/${aws_apigatewayv2_integration.frontend_errors.id}"
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.nve_proxy.id
   name        = "$default"

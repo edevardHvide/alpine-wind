@@ -45,6 +45,7 @@ resource "aws_iam_user_policy" "deploy" {
           aws_lambda_function.nve_proxy.arn,
           aws_lambda_function.conditions_summary.arn,
           aws_lambda_function.feedback.arn,
+          aws_lambda_function.frontend_errors.arn,
         ]
       },
       {

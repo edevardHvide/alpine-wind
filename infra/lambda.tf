@@ -110,3 +110,30 @@ resource "aws_lambda_permission" "feedback_apigw" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.nve_proxy.execution_arn}/*/*"
 }
+
+# --- Lambda: Frontend Error Ingestion ---
+
+data "archive_file" "frontend_errors" {
+  type        = "zip"
+  source_file = "${path.module}/lambda/frontend_errors.py"
+  output_path = "${path.module}/.build/frontend_errors.zip"
+}
+
+resource "aws_lambda_function" "frontend_errors" {
+  function_name    = "${var.project_name}-frontend-errors"
+  role             = aws_iam_role.lambda.arn
+  handler          = "frontend_errors.lambda_handler"
+  runtime          = "python3.11"
+  timeout          = 5
+  memory_size      = 128
+  filename         = data.archive_file.frontend_errors.output_path
+  source_code_hash = data.archive_file.frontend_errors.output_base64sha256
+}
+
+resource "aws_lambda_permission" "frontend_errors_apigw" {
+  statement_id  = "ApiGatewayInvokeFrontendErrors"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.frontend_errors.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.nve_proxy.execution_arn}/*/*"
+}
