@@ -9,11 +9,13 @@ interface ControlPanelProps {
   params: WindParams;
   showSnow: boolean;
   showWind: boolean;
+  showPeakLabels: boolean;
   historicalMode: boolean;
   historicalLoading: boolean;
   selectionMode: boolean;
   onParamsChange: (p: WindParams) => void;
   onMountainSelect: (m: PlaceResult) => void;
+  onTogglePeakLabels: () => void;
   onToggleSnow: () => void;
   onToggleWind: () => void;
   onHistoricalMode: () => void;
@@ -24,11 +26,13 @@ export default function ControlPanel({
   params,
   showSnow,
   showWind,
+  showPeakLabels,
   historicalMode,
   historicalLoading,
   selectionMode,
   onParamsChange,
   onMountainSelect,
+  onTogglePeakLabels,
   onToggleSnow,
   onToggleWind,
   onHistoricalMode,
@@ -196,6 +200,15 @@ export default function ControlPanel({
             </button>
           </div>
         )}
+
+        <div className="flex gap-2 text-xs">
+          <button
+            onClick={onTogglePeakLabels}
+            className={`flex-1 py-2 md:py-1.5 rounded-full font-medium transition-all ${showPeakLabels ? "bg-sky-600/80 text-white shadow-md shadow-sky-900/30" : "bg-slate-700/60 text-slate-400 hover:bg-slate-700/80"}`}
+          >
+            Peaks {showPeakLabels ? "ON" : "OFF"}
+          </button>
+        </div>
 
         {/* Feedback + version */}
         <div className="flex items-center justify-between pt-1">

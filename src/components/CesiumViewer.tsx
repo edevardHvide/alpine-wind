@@ -12,11 +12,15 @@ import {
   HorizontalOrigin,
   HeightReference,
   Cartesian2,
+  DistanceDisplayCondition,
+  Color,
+  LabelStyle,
   type Viewer,
 } from "cesium";
 import { useCesium } from "../hooks/useCesium.ts";
 import { sampleTerrain } from "../simulation/terrain-sampler.ts";
 import { isMobileDevice, MOBILE_CELL_SIZE, DESKTOP_CELL_SIZE } from "../utils/device.ts";
+import { fetchPeakLabels, type PeakLabel } from "../api/kartverket.ts";
 import type { TerrainRegion } from "../types/terrain.ts";
 import type { ElevationGrid } from "../types/terrain.ts";
 
@@ -30,6 +34,7 @@ interface CesiumViewerProps {
   historicalMode?: boolean;
   selectedPoint?: { lat: number; lng: number; name?: string } | null;
   searchedMountain?: { lat: number; lng: number; name: string } | null;
+  showPeakLabels?: boolean;
   onMapClick?: (lat: number, lng: number) => void;
   onProbeClick?: (lat: number, lng: number, screenX: number, screenY: number) => void;
   onTerrainReady?: (grid: ElevationGrid) => void;
@@ -41,6 +46,7 @@ export default function CesiumViewer({
   selectionMode,
   historicalMode,
   searchedMountain,
+  showPeakLabels,
   onMapClick,
   onProbeClick,
   onTerrainReady,
@@ -51,6 +57,8 @@ export default function CesiumViewer({
   const sampledRegionRef = useRef<string>("");
   const mountainMarkerRef = useRef<Entity | null>(null);
   const mountainLabelRef = useRef<Entity | null>(null);
+  const peakEntitiesRef = useRef<Entity[]>([]);
+  const peakCacheRef = useRef<{ regionName: string; peaks: PeakLabel[] } | null>(null);
 
   // Expose viewer instance
   useEffect(() => {
@@ -204,6 +212,79 @@ export default function CesiumViewer({
       }
     };
   }, [searchedMountain, viewer]);
+
+  // Peak labels with LOD — major peaks visible from far, minor ones only when close
+  useEffect(() => {
+    const v = viewer.current;
+    if (!v) return;
+
+    // Remove existing peak entities
+    for (const e of peakEntitiesRef.current) {
+      if (v.entities.contains(e)) v.entities.remove(e);
+    }
+    peakEntitiesRef.current = [];
+
+    if (!showPeakLabels) return;
+
+    let cancelled = false;
+
+    const addPeakEntities = (peaks: PeakLabel[]) => {
+      if (cancelled || !viewer.current) return;
+      const v = viewer.current;
+      const entities: Entity[] = [];
+
+      for (const peak of peaks) {
+        // Major peaks (Fjell, Fjellområde): visible from 0–50km
+        // Minor peaks (Topp, Rygg, etc.): visible from 0–15km
+        const maxDist = peak.major ? 50_000 : 15_000;
+
+        const entity = v.entities.add({
+          position: Cartesian3.fromDegrees(peak.lng, peak.lat),
+          label: {
+            text: peak.name,
+            font: peak.major ? "14px sans-serif" : "12px sans-serif",
+            style: LabelStyle.FILL_AND_OUTLINE,
+            fillColor: Color.WHITE,
+            outlineColor: Color.BLACK,
+            outlineWidth: 3,
+            verticalOrigin: VerticalOrigin.BOTTOM,
+            horizontalOrigin: HorizontalOrigin.CENTER,
+            heightReference: HeightReference.CLAMP_TO_GROUND,
+            pixelOffset: new Cartesian2(0, -6),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            distanceDisplayCondition: new DistanceDisplayCondition(0, maxDist),
+          },
+        });
+        entities.push(entity);
+      }
+
+      peakEntitiesRef.current = entities;
+    };
+
+    // Use cache if same region
+    if (peakCacheRef.current?.regionName === region.name) {
+      addPeakEntities(peakCacheRef.current.peaks);
+    } else {
+      fetchPeakLabels({
+        north: region.bbox.north,
+        south: region.bbox.south,
+        east: region.bbox.east,
+        west: region.bbox.west,
+      }).then((peaks) => {
+        peakCacheRef.current = { regionName: region.name, peaks };
+        addPeakEntities(peaks);
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      if (!viewer.current) return;
+      for (const e of peakEntitiesRef.current) {
+        if (viewer.current.entities.contains(e)) viewer.current.entities.remove(e);
+      }
+      peakEntitiesRef.current = [];
+    };
+  }, [showPeakLabels, region, viewer]);
 
   // Click handler for probe (historical mode: depth probe, default: terrain info + analyze)
   useEffect(() => {

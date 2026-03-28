@@ -92,6 +92,7 @@ export default function App() {
   });
   const [showSnow, setShowSnow] = useState(true);
   const [showWind, setShowWind] = useState(true);
+  const [showPeakLabels, setShowPeakLabels] = useState(true);
   const [terrainReady, setTerrainReady] = useState(false);
 
   // Historical mode state
@@ -676,6 +677,7 @@ export default function App() {
           onMapClick={handleMapClick}
           onProbeClick={handleProbeClick}
           onTerrainReady={handleTerrainReady}
+          showPeakLabels={showPeakLabels}
           onViewerReady={(v: Viewer) => {
             viewerRef.current = v;
             setCesiumViewer(v);
@@ -690,6 +692,7 @@ export default function App() {
         params={params}
         showSnow={showSnow}
         showWind={showWind}
+        showPeakLabels={showPeakLabels}
         historicalMode={historicalMode}
         historicalLoading={historicalSim.loading}
         selectionMode={selectionMode}
@@ -714,6 +717,7 @@ export default function App() {
           // once both weather + worker terrain are ready
           startPrefetch(m.lat, m.lng);
         }}
+        onTogglePeakLabels={() => setShowPeakLabels((s) => !s)}
         onToggleSnow={() => setShowSnow((s) => !s)}
         onToggleWind={() => {
           setShowWind((s) => {
