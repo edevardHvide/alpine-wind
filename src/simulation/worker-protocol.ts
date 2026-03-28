@@ -36,6 +36,7 @@ export interface RunHistoricalMessage {
     timestamps: number[];   // epoch ms (Date not transferable)
     stations: WeatherStationData[];
   };
+  overrides?: CoefficientsOverride;
 }
 
 export interface CancelMessage {

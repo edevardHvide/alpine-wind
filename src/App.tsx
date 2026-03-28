@@ -655,8 +655,12 @@ export default function App() {
       console.warn("[Dev] No terrain loaded — select a mountain first");
       return;
     }
-    runSimulation(params, overrides);
-  }, [params, runSimulation, terrainReady]);
+    if (historicalMode && backgroundWeatherRef.current) {
+      historicalSim.run(backgroundWeatherRef.current, { overrides });
+    } else {
+      runSimulation(params, overrides);
+    }
+  }, [params, runSimulation, terrainReady, historicalMode, historicalSim]);
 
   return (
     <div className="relative w-full h-full">

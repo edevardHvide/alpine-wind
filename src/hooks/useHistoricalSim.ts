@@ -4,6 +4,7 @@ import type { WindField } from "../types/wind.ts";
 import type { SnowDepthGrid } from "../types/snow.ts";
 import type { SpatialWeatherTimeSeries } from "../api/nve.ts";
 import type { WorkerResponse, HistoricalStepData } from "../simulation/worker-protocol.ts";
+import type { CoefficientsOverride } from "../simulation/coefficients.ts";
 
 export interface HistoricalStep {
   timestamp: Date;
@@ -52,7 +53,7 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
   const silentRef = useRef(false);
 
   const run = useCallback(
-    (weather: SpatialWeatherTimeSeries, options?: { silent?: boolean }) => {
+    (weather: SpatialWeatherTimeSeries, options?: { silent?: boolean; overrides?: CoefficientsOverride }) => {
       const worker = workerRef.current;
       if (!worker) return;
 
@@ -125,6 +126,7 @@ export function useHistoricalSim(workerRef: { current: Worker | null }) {
           timestamps: weather.timestamps.map((d) => d.getTime()),
           stations: stationData,
         },
+        overrides: options?.overrides,
       });
     },
     [workerRef],

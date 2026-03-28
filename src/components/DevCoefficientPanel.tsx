@@ -41,6 +41,29 @@ export default function DevCoefficientPanel({ visible, onApply }: Props) {
     navigator.clipboard.writeText(json);
   }, [values]);
 
+  const handleExport = useCallback(() => {
+    const exportData = {
+      timestamp: new Date().toISOString(),
+      defaults: { ...DEFAULTS },
+      current: { ...values },
+      overrides: {} as Record<string, { from: number; to: number }>,
+    };
+    for (const [key, val] of Object.entries(values)) {
+      const k = key as keyof typeof DEFAULTS;
+      if (val !== DEFAULTS[k]) {
+        exportData.overrides[k] = { from: DEFAULTS[k], to: val };
+      }
+    }
+    const json = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pow-predictor-coefficients-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [values]);
+
   const toggleGroup = useCallback((name: string) => {
     setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
   }, []);
@@ -126,6 +149,16 @@ export default function DevCoefficientPanel({ visible, onApply }: Props) {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Export footer */}
+      <div className="p-3 border-t border-white/10 shrink-0">
+        <button
+          onClick={handleExport}
+          className="w-full px-3 py-2 rounded text-xs font-medium bg-emerald-600/80 hover:bg-emerald-500/80 text-white transition-colors"
+        >
+          Export Settings to JSON
+        </button>
       </div>
     </div>
   );

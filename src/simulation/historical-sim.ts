@@ -14,6 +14,7 @@ import {
   WIND_SPEED_CHANGE_THRESHOLD,
   LAPSE_RATE,
   PRECIP_ELEV_FACTOR,
+  type CoefficientsOverride,
 } from "./coefficients.ts";
 
 export interface HistoricalStep {
@@ -128,6 +129,7 @@ function interpolateTemp(
   t: number,
   terrain: ElevationGrid,
   idw: IDWWeights,
+  lapseRate = LAPSE_RATE,
 ): Float64Array {
   const n = idw.rows * idw.cols;
   const result = new Float64Array(n);
@@ -138,7 +140,7 @@ function interpolateTemp(
     }
     // Lapse rate correction: cooler at higher elevation, warmer in valleys
     const dElev = terrain.heights[i] - idw.refAltitude[i];
-    result[i] = val + dElev * LAPSE_RATE;
+    result[i] = val + dElev * lapseRate;
   }
   return result;
 }
@@ -151,6 +153,7 @@ function interpolateTempLerp(
   frac: number,
   terrain: ElevationGrid,
   idw: IDWWeights,
+  lapseRate = LAPSE_RATE,
 ): Float64Array {
   const n = idw.rows * idw.cols;
   const result = new Float64Array(n);
@@ -162,7 +165,7 @@ function interpolateTempLerp(
     }
     const base = v0 + (v1 - v0) * frac;
     const dElev = terrain.heights[i] - idw.refAltitude[i];
-    result[i] = base + dElev * LAPSE_RATE;
+    result[i] = base + dElev * lapseRate;
   }
   return result;
 }
@@ -176,6 +179,7 @@ function interpolatePrecip(
   t: number,
   terrain: ElevationGrid,
   idw: IDWWeights,
+  precipElevFactor = PRECIP_ELEV_FACTOR,
 ): Float64Array {
   const n = idw.rows * idw.cols;
   const result = new Float64Array(n);
@@ -186,7 +190,7 @@ function interpolatePrecip(
     }
     // Orographic enhancement: more precip at higher elevations
     const dElev = terrain.heights[i] - idw.refAltitude[i];
-    const factor = 1 + Math.max(dElev, 0) * PRECIP_ELEV_FACTOR;
+    const factor = 1 + Math.max(dElev, 0) * precipElevFactor;
     result[i] = val * factor;
   }
   return result;
@@ -239,6 +243,7 @@ export async function runHistoricalSimulation(
   terrain: ElevationGrid,
   weather: SpatialWeatherTimeSeries,
   onProgress?: (stage: string, percent: number) => void,
+  overrides?: CoefficientsOverride,
 ): Promise<HistoricalStep[]> {
   const { rows, cols } = terrain;
   const cellCount = rows * cols;
@@ -246,6 +251,16 @@ export async function runHistoricalSimulation(
   const accumulated = new Float64Array(cellCount);
   const len = weather.timestamps.length;
   const stations = weather.stations;
+
+  // Resolve overridable coefficients
+  const snowWaterRatio = overrides?.SNOW_WATER_RATIO ?? SNOW_WATER_RATIO;
+  const meltDegreeFactor = overrides?.MELT_DEGREE_FACTOR ?? MELT_DEGREE_FACTOR;
+  const rainMeltFactor = overrides?.RAIN_MELT_FACTOR ?? RAIN_MELT_FACTOR;
+  const subSteps = overrides?.SUB_STEPS ?? SUB_STEPS;
+  const windDirThreshold = overrides?.WIND_DIR_CHANGE_THRESHOLD ?? WIND_DIR_CHANGE_THRESHOLD;
+  const windSpeedThreshold = overrides?.WIND_SPEED_CHANGE_THRESHOLD ?? WIND_SPEED_CHANGE_THRESHOLD;
+  const lapseRate = overrides?.LAPSE_RATE ?? LAPSE_RATE;
+  const precipElevFactor = overrides?.PRECIP_ELEV_FACTOR ?? PRECIP_ELEV_FACTOR;
 
   // Precompute IDW weights
   const idw = computeIDWWeights(terrain, stations);
@@ -266,12 +281,12 @@ export async function runHistoricalSimulation(
 
     if (
       !lastWindField ||
-      angleDiff(lastSolvedDir, dir) > WIND_DIR_CHANGE_THRESHOLD ||
-      Math.abs(lastSolvedSpeed - spd) > WIND_SPEED_CHANGE_THRESHOLD
+      angleDiff(lastSolvedDir, dir) > windDirThreshold ||
+      Math.abs(lastSolvedSpeed - spd) > windSpeedThreshold
     ) {
       const avgTemp = stationMean(stations, "temp", t);
       const params: WindParams = { direction: dir, speed: spd, temperature: avgTemp };
-      lastWindField = solveWindField(terrain, params);
+      lastWindField = solveWindField(terrain, params, overrides);
       lastSolvedDir = dir;
       lastSolvedSpeed = spd;
     }
@@ -286,12 +301,12 @@ export async function runHistoricalSimulation(
 
   // Generate sub-steps with spatially-interpolated weather
   for (let t = 0; t < len - 1; t++) {
-    for (let s = 0; s < SUB_STEPS; s++) {
-      const frac = s / SUB_STEPS;
+    for (let s = 0; s < subSteps; s++) {
+      const frac = s / subSteps;
 
       // Domain averages for display and wind solver
       const avgTemp = lerp(stationMean(stations, "temp", t), stationMean(stations, "temp", t + 1), frac);
-      const avgPrecip = stationMean(stations, "precip", t) / SUB_STEPS;
+      const avgPrecip = stationMean(stations, "precip", t) / subSteps;
       const avgWindSpeed = lerp(stationMean(stations, "windSpeed", t), stationMean(stations, "windSpeed", t + 1), frac);
       const avgWindDir = interpolateAngle(
         stationMeanWindDir(stations, t),
@@ -304,8 +319,8 @@ export async function runHistoricalSimulation(
       const params: WindParams = { direction: avgWindDir, speed: avgWindSpeed, temperature: avgTemp };
 
       // Per-cell interpolated temp (with lapse-rate) and precip (with orographic enhancement)
-      const cellTemp = interpolateTempLerp(stations, t, t + 1, frac, terrain, idw);
-      const cellPrecip = interpolatePrecip(stations, t, terrain, idw);
+      const cellTemp = interpolateTempLerp(stations, t, t + 1, frac, terrain, idw, lapseRate);
+      const cellPrecip = interpolatePrecip(stations, t, terrain, idw, precipElevFactor);
 
       // Apply snowfall/melt per cell using spatially-varying weather
       // Build per-cell snowfall array: only where temp <= 0 and precip > 0
@@ -315,14 +330,14 @@ export async function runHistoricalSimulation(
 
       for (let i = 0; i < cellCount; i++) {
         const temp_i = cellTemp[i];
-        const precip_i = cellPrecip[i] / SUB_STEPS;
+        const precip_i = cellPrecip[i] / subSteps;
 
         if (temp_i <= 0 && precip_i > 0) {
-          cellSnowfall[i] = precip_i * SNOW_WATER_RATIO / 10;
+          cellSnowfall[i] = precip_i * snowWaterRatio / 10;
           hasSnow = true;
         } else if (temp_i > 0) {
           // Melt directly
-          const meltMm = Math.max(0, temp_i) * (MELT_DEGREE_FACTOR / SUB_STEPS) + precip_i * RAIN_MELT_FACTOR;
+          const meltMm = Math.max(0, temp_i) * (meltDegreeFactor / subSteps) + precip_i * rainMeltFactor;
           const meltCm = meltMm * 0.1;
           accumulated[i] = Math.max(0, accumulated[i] - meltCm);
           hasMelt = true;
@@ -330,7 +345,7 @@ export async function runHistoricalSimulation(
       }
 
       if (hasSnow) {
-        const delta = computeSnowAccumulation(terrain, windField, params, cellSnowfall);
+        const delta = computeSnowAccumulation(terrain, windField, params, cellSnowfall, overrides);
         for (let i = 0; i < cellCount; i++) {
           accumulated[i] += delta.depth[i];
         }
@@ -362,8 +377,8 @@ export async function runHistoricalSimulation(
     const windField = windFields[t];
     const params: WindParams = { direction: avgWindDir, speed: avgWindSpeed, temperature: avgTemp };
 
-    const cellTemp = interpolateTemp(stations, t, terrain, idw);
-    const cellPrecip = interpolatePrecip(stations, t, terrain, idw);
+    const cellTemp = interpolateTemp(stations, t, terrain, idw, lapseRate);
+    const cellPrecip = interpolatePrecip(stations, t, terrain, idw, precipElevFactor);
 
     let hasSnow = false;
     const cellSnowfall = new Float64Array(cellCount);
@@ -373,17 +388,17 @@ export async function runHistoricalSimulation(
       const precip_i = cellPrecip[i];
 
       if (temp_i <= 0 && precip_i > 0) {
-        cellSnowfall[i] = precip_i * SNOW_WATER_RATIO / 10;
+        cellSnowfall[i] = precip_i * snowWaterRatio / 10;
         hasSnow = true;
       } else if (temp_i > 0) {
-        const meltMm = Math.max(0, temp_i) * MELT_DEGREE_FACTOR + precip_i * RAIN_MELT_FACTOR;
+        const meltMm = Math.max(0, temp_i) * meltDegreeFactor + precip_i * rainMeltFactor;
         const meltCm = meltMm * 0.1;
         accumulated[i] = Math.max(0, accumulated[i] - meltCm);
       }
     }
 
     if (hasSnow) {
-      const delta = computeSnowAccumulation(terrain, windField, params, cellSnowfall);
+      const delta = computeSnowAccumulation(terrain, windField, params, cellSnowfall, overrides);
       for (let i = 0; i < cellCount; i++) {
         accumulated[i] += delta.depth[i];
       }
@@ -400,6 +415,6 @@ export async function runHistoricalSimulation(
     });
   }
 
-  console.log(`Historical sim: ${steps.length} steps computed (${SUB_STEPS} sub-steps per 3h interval)`);
+  console.log(`Historical sim: ${steps.length} steps computed (${subSteps} sub-steps per 3h interval)`);
   return steps;
 }

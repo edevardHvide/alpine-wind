@@ -118,6 +118,7 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           if (cancelled) return;
           self.postMessage({ type: "historical-progress", stage, percent });
         },
+        msg.overrides,
       );
 
       if (cancelled) return;
