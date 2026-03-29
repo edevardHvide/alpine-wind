@@ -5,6 +5,7 @@ import ControlPanel from "./components/ControlPanel.tsx";
 import SnowLegend from "./components/SnowLegend.tsx";
 import SnowDepthTooltip from "./components/SnowDepthTooltip.tsx";
 import MapCompass from "./components/MapCompass.tsx";
+import LocateButton from "./components/LocateButton.tsx";
 import ScaleBar from "./components/ScaleBar.tsx";
 import TimelineBar from "./components/TimelineBar.tsx";
 import WelcomePage from "./components/WelcomePage.tsx";
@@ -686,6 +687,7 @@ export default function App() {
       </CesiumErrorBoundary>
 
       <MapCompass viewer={cesiumViewer} />
+      <LocateButton viewer={cesiumViewer} />
       <ScaleBar viewer={cesiumViewer} />
 
       <ControlPanel
