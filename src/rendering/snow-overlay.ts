@@ -250,17 +250,7 @@ export class SnowOverlayManager {
 
     rawCtx.putImageData(imageData, 0, 0);
 
-    // 2. Upscale with bilinear interpolation for smooth gradients
-    const scale = 4;
-    const canvas = document.createElement("canvas");
-    canvas.width = snow.cols * scale;
-    canvas.height = snow.rows * scale;
-    const ctx = canvas.getContext("2d")!;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(raw, 0, 0, canvas.width, canvas.height);
-
-    return canvas;
+    return raw;
   }
 
   private crossfade(oldLayer: ImageryLayer, newLayer: ImageryLayer, durationMs: number): void {
