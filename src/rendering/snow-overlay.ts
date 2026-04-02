@@ -248,9 +248,46 @@ export class SnowOverlayManager {
       }
     }
 
+    // Fill transparent (water) pixels with nearest opaque neighbor's RGB
+    // so bilinear upscale doesn't blend (0,0,0,0) with snow colors
+    for (let r = 0; r < snow.rows; r++) {
+      const canvasRow = snow.rows - 1 - r;
+      for (let c = 0; c < snow.cols; c++) {
+        const pi = (canvasRow * snow.cols + c) * 4;
+        if (imageData.data[pi + 3] === 0) {
+          // Find nearest opaque pixel in cardinal directions
+          for (let d = 1; d <= 3; d++) {
+            for (const [dr, dc] of [[0, -d], [0, d], [-d, 0], [d, 0]]) {
+              const nr = canvasRow + dr, nc = c + dc;
+              if (nr < 0 || nr >= snow.rows || nc < 0 || nc >= snow.cols) continue;
+              const ni = (nr * snow.cols + nc) * 4;
+              if (imageData.data[ni + 3] > 0) {
+                imageData.data[pi] = imageData.data[ni];
+                imageData.data[pi + 1] = imageData.data[ni + 1];
+                imageData.data[pi + 2] = imageData.data[ni + 2];
+                // Keep alpha = 0 so it stays transparent
+                d = 99; // break outer
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
     rawCtx.putImageData(imageData, 0, 0);
 
-    return raw;
+    // Upscale with bilinear interpolation for smooth gradients
+    const scale = 4;
+    const canvas = document.createElement("canvas");
+    canvas.width = snow.cols * scale;
+    canvas.height = snow.rows * scale;
+    const ctx = canvas.getContext("2d")!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(raw, 0, 0, canvas.width, canvas.height);
+
+    return canvas;
   }
 
   private crossfade(oldLayer: ImageryLayer, newLayer: ImageryLayer, durationMs: number): void {
