@@ -175,9 +175,9 @@ export async function fetchSnowDepth(
 
   try {
     const sd = await fetchTheme(x, y, today, today, "sd");
-    const depthMm = sd.data[0] ?? 0;
+    const depthCm = sd.data[0] ?? 0; // sd theme returns cm directly
     return {
-      depthCm: Math.round(depthMm / 10),
+      depthCm: Math.round(depthCm),
       altitude: sd.altitude,
     };
   } catch (e) {

@@ -21,6 +21,7 @@ interface SnowDepthTooltipProps {
   summary?: ConditionsSummary | null;
   // SeNorge snow depth context
   senorgeDepthCm?: number;
+  senorgeAltitude?: number;
   redistributionCm?: number;
   // Simulation
   onSimulate?: () => void;
@@ -60,6 +61,7 @@ export default function SnowDepthTooltip({
   analysisError,
   summary,
   senorgeDepthCm,
+  senorgeAltitude,
   redistributionCm,
   onSimulate,
 }: SnowDepthTooltipProps) {
@@ -135,7 +137,7 @@ export default function SnowDepthTooltip({
                     ~{Math.round(refinedDepth!)} cm
                   </p>
                   <div className="text-xs text-slate-400 font-light mt-1 space-y-0.5">
-                    <p><span className="text-slate-500">├</span> Base snowpack (SeNorge): <span className="text-slate-300 tabular-nums">{senorgeDepthCm} cm</span></p>
+                    <p><span className="text-slate-500">├</span> Base (SeNorge{senorgeAltitude ? `, ${Math.round(senorgeAltitude)}m` : ""}): <span className="text-slate-300 tabular-nums">{senorgeDepthCm} cm</span></p>
                     <p><span className="text-slate-500">└</span> Wind redistribution: <span className={`tabular-nums ${redistributionCm! >= 0 ? "text-emerald-400" : "text-amber-400"}`}>{redistLabel}</span></p>
                   </div>
                 </>

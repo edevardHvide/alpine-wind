@@ -114,7 +114,7 @@ export default function App() {
     screenX: number; screenY: number;
     temp?: number; precip?: number; windSpeed?: number; windDir?: number;
     cloudCover?: number; elevation?: number;
-    senorgeDepthCm?: number; redistributionCm?: number;
+    senorgeDepthCm?: number; senorgeAltitude?: number; redistributionCm?: number;
   } | null>(null);
 
   // Triggers re-render when weather becomes available (for exploration tooltip)
@@ -260,7 +260,7 @@ export default function App() {
 
   // Auto-start historical sim in background once worker terrain + weather are both ready
   const backgroundWeatherRef = useRef<SpatialWeatherTimeSeries | null>(null);
-  const senorgeDepthRef = useRef<number | null>(null);
+  const senorgeDepthRef = useRef<{ depthCm: number; altitude: number } | null>(null);
   useEffect(() => {
     if (!workerReady || historicalMode || !prefetchRef.current) return;
     // Worker has terrain, prefetch is in-flight — await it then start sim silently
@@ -308,7 +308,7 @@ export default function App() {
     });
     // Fetch SeNorge snow depth at center point (lightweight, single API call)
     fetchSnowDepth(lat, lng).then((sd) => {
-      senorgeDepthRef.current = sd.depthCm;
+      senorgeDepthRef.current = sd;
       console.log(`SeNorge snow depth: ${sd.depthCm} cm at ${Math.round(sd.altitude)}m`);
     }).catch(() => {
       senorgeDepthRef.current = null;
@@ -543,9 +543,13 @@ export default function App() {
     }
 
     // Compute wind redistribution delta: cell depth vs grid average
-    const senorgeDepthCm = senorgeDepthRef.current ?? undefined;
+    const senorge = senorgeDepthRef.current;
+    let senorgeDepthCm: number | undefined;
+    let senorgeAltitude: number | undefined;
     let redistributionCm: number | undefined;
-    if (senorgeDepthCm !== undefined && senorgeDepthCm > 0) {
+    if (senorge && senorge.depthCm > 0) {
+      senorgeDepthCm = senorge.depthCm;
+      senorgeAltitude = senorge.altitude;
       const depthArr = step.snowGrid.depth;
       let sum = 0;
       let count = 0;
@@ -556,7 +560,7 @@ export default function App() {
       redistributionCm = Math.round((depthCm - avgSimDepth) * 10) / 10;
     }
 
-    setDepthProbe({ lat, lng, depthCm, screenX, screenY, temp, precip, windSpeed, windDir, elevation, senorgeDepthCm, redistributionCm });
+    setDepthProbe({ lat, lng, depthCm, screenX, screenY, temp, precip, windSpeed, windDir, elevation, senorgeDepthCm, senorgeAltitude, redistributionCm });
   }, [historicalMode, historicalSim.steps, historicalSim.currentStep, terrainRef]);
 
   // Backfill weather into open tooltip when weather arrives after click
@@ -879,6 +883,7 @@ export default function App() {
           cloudCover={depthProbe.cloudCover}
           elevation={depthProbe.elevation}
           senorgeDepthCm={depthProbe.senorgeDepthCm}
+          senorgeAltitude={depthProbe.senorgeAltitude}
           redistributionCm={depthProbe.redistributionCm}
           onClose={() => setDepthProbe(null)}
           onAnalyze={handleAnalyze}
