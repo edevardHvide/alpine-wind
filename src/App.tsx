@@ -12,7 +12,7 @@ import WelcomePage from "./components/WelcomePage.tsx";
 import InstallBanner from "./components/InstallBanner.tsx";
 import { REGIONS, regionFromCoordinates } from "./simulation/regions.ts";
 import type { PlaceResult } from "./api/kartverket.ts";
-import { fetchSpatialWeather, type SpatialWeatherTimeSeries, API_GATEWAY_URL } from "./api/nve.ts";
+import { fetchSpatialWeather, fetchSnowDepth, type SpatialWeatherTimeSeries, API_GATEWAY_URL } from "./api/nve.ts";
 import { fetchRegObsObservations } from "./api/regobs.ts";
 import { fetchVarsomForecast } from "./api/varsom.ts";
 import { computeCellAspectSlope, scoreAndFilterObservations } from "./utils/relevance.ts";
@@ -114,6 +114,7 @@ export default function App() {
     screenX: number; screenY: number;
     temp?: number; precip?: number; windSpeed?: number; windDir?: number;
     cloudCover?: number; elevation?: number;
+    senorgeDepthCm?: number; redistributionCm?: number;
   } | null>(null);
 
   // Triggers re-render when weather becomes available (for exploration tooltip)
@@ -259,6 +260,7 @@ export default function App() {
 
   // Auto-start historical sim in background once worker terrain + weather are both ready
   const backgroundWeatherRef = useRef<SpatialWeatherTimeSeries | null>(null);
+  const senorgeDepthRef = useRef<number | null>(null);
   useEffect(() => {
     if (!workerReady || historicalMode || !prefetchRef.current) return;
     // Worker has terrain, prefetch is in-flight — await it then start sim silently
@@ -303,6 +305,13 @@ export default function App() {
       setWeatherReady((n) => n + 1);
     }).catch((err) => {
       sendErrorReport(err instanceof Error ? err : new Error(String(err)), "weather-fetch");
+    });
+    // Fetch SeNorge snow depth at center point (lightweight, single API call)
+    fetchSnowDepth(lat, lng).then((sd) => {
+      senorgeDepthRef.current = sd.depthCm;
+      console.log(`SeNorge snow depth: ${sd.depthCm} cm at ${Math.round(sd.altitude)}m`);
+    }).catch(() => {
+      senorgeDepthRef.current = null;
     });
   }, []);
 
@@ -355,6 +364,7 @@ export default function App() {
       clearOverlays();
       historicalSim.reset();
       backgroundWeatherRef.current = null;
+      senorgeDepthRef.current = null;
       setRegion(regionFromCoordinates(name, lat, lng));
       startPrefetch(lat, lng);
     }
@@ -532,7 +542,21 @@ export default function App() {
       }
     }
 
-    setDepthProbe({ lat, lng, depthCm, screenX, screenY, temp, precip, windSpeed, windDir, elevation });
+    // Compute wind redistribution delta: cell depth vs grid average
+    const senorgeDepthCm = senorgeDepthRef.current ?? undefined;
+    let redistributionCm: number | undefined;
+    if (senorgeDepthCm !== undefined && senorgeDepthCm > 0) {
+      const depthArr = step.snowGrid.depth;
+      let sum = 0;
+      let count = 0;
+      for (let i = 0; i < depthArr.length; i++) {
+        if (depthArr[i] > 0) { sum += depthArr[i]; count++; }
+      }
+      const avgSimDepth = count > 0 ? sum / count : 0;
+      redistributionCm = Math.round((depthCm - avgSimDepth) * 10) / 10;
+    }
+
+    setDepthProbe({ lat, lng, depthCm, screenX, screenY, temp, precip, windSpeed, windDir, elevation, senorgeDepthCm, redistributionCm });
   }, [historicalMode, historicalSim.steps, historicalSim.currentStep, terrainRef]);
 
   // Backfill weather into open tooltip when weather arrives after click
@@ -701,6 +725,7 @@ export default function App() {
         clearOverlays();
         historicalSim.reset();
         backgroundWeatherRef.current = null;
+      senorgeDepthRef.current = null;
         if (historicalMode) exitHistoricalMode();
         setRegion(regionFromCoordinates(name, lat, lng));
         startPrefetch(lat, lng);
@@ -753,6 +778,7 @@ export default function App() {
           clearOverlays();
           historicalSim.reset(); // Cancel any in-flight background sim
           backgroundWeatherRef.current = null;
+      senorgeDepthRef.current = null;
           if (historicalMode) exitHistoricalMode();
           setRegion(regionFromCoordinates(m.name, m.lat, m.lng));
           // Start weather prefetch immediately — background sim will auto-start
@@ -852,6 +878,8 @@ export default function App() {
           windDir={depthProbe.windDir}
           cloudCover={depthProbe.cloudCover}
           elevation={depthProbe.elevation}
+          senorgeDepthCm={depthProbe.senorgeDepthCm}
+          redistributionCm={depthProbe.redistributionCm}
           onClose={() => setDepthProbe(null)}
           onAnalyze={handleAnalyze}
           analysisLoading={analysisLoading}

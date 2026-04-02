@@ -160,6 +160,32 @@ export async function fetchWeatherTimeSeries(
   };
 }
 
+// ── Snow depth from SeNorge (sd theme) ────────────────
+
+/**
+ * Fetch SeNorge snow depth at a single point.
+ * Returns depth in cm (API returns mm). Uses today's date.
+ * Returns 0 if no data available (ocean, summer, etc.)
+ */
+export async function fetchSnowDepth(
+  lat: number, lng: number,
+): Promise<{ depthCm: number; altitude: number }> {
+  const { x, y } = await findValidUtm(lat, lng);
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    const sd = await fetchTheme(x, y, today, today, "sd");
+    const depthMm = sd.data[0] ?? 0;
+    return {
+      depthCm: Math.round(depthMm / 10),
+      altitude: sd.altitude,
+    };
+  } catch (e) {
+    console.warn("SeNorge snow depth fetch failed:", e);
+    return { depthCm: 0, altitude: 0 };
+  }
+}
+
 // ── Multi-point spatial weather fetch ────────────────
 
 const GRID_SIZE = 3; // 3×3 = 9 sample stations across bbox

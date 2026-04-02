@@ -19,6 +19,9 @@ interface SnowDepthTooltipProps {
   analysisLoading?: boolean;
   analysisError?: string | null;
   summary?: ConditionsSummary | null;
+  // SeNorge snow depth context
+  senorgeDepthCm?: number;
+  redistributionCm?: number;
   // Simulation
   onSimulate?: () => void;
 }
@@ -56,6 +59,8 @@ export default function SnowDepthTooltip({
   analysisLoading,
   analysisError,
   summary,
+  senorgeDepthCm,
+  redistributionCm,
   onSimulate,
 }: SnowDepthTooltipProps) {
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768 && "ontouchstart" in window;
@@ -93,6 +98,13 @@ export default function SnowDepthTooltip({
   const hasDepth = depthCm >= 0;
   const showAnalyzeButton = onAnalyze && !summary && !analysisLoading && !analysisError;
 
+  // SeNorge snow depth breakdown
+  const hasSnowDepthBreakdown = hasDepth && senorgeDepthCm !== undefined && senorgeDepthCm > 0 && redistributionCm !== undefined;
+  const refinedDepth = hasSnowDepthBreakdown ? Math.max(0, senorgeDepthCm + redistributionCm) : null;
+  const redistLabel = hasSnowDepthBreakdown
+    ? redistributionCm >= 0 ? `+${redistributionCm.toFixed(0)} cm deposited` : `${redistributionCm.toFixed(0)} cm scoured`
+    : null;
+
   // Mobile: fixed bottom sheet. Desktop: follow click position.
   if (isMobile) {
     return (
@@ -117,14 +129,26 @@ export default function SnowDepthTooltip({
         <div className="flex items-start gap-3 overflow-y-auto min-h-0 px-0 pb-2">
           <div className="flex-1 overflow-y-auto min-h-0">
             {hasDepth ? (
-              <>
-                <p className="text-lg font-semibold text-sky-300 tabular-nums">
-                  {depthCm.toFixed(1)} cm
-                </p>
-                <p className="text-xs text-slate-400 font-light mt-0.5">
-                  Predicted accumulation from sim period
-                </p>
-              </>
+              hasSnowDepthBreakdown ? (
+                <>
+                  <p className="text-lg font-semibold text-sky-300 tabular-nums">
+                    ~{Math.round(refinedDepth!)} cm
+                  </p>
+                  <div className="text-xs text-slate-400 font-light mt-1 space-y-0.5">
+                    <p><span className="text-slate-500">├</span> Base snowpack (SeNorge): <span className="text-slate-300 tabular-nums">{senorgeDepthCm} cm</span></p>
+                    <p><span className="text-slate-500">└</span> Wind redistribution: <span className={`tabular-nums ${redistributionCm! >= 0 ? "text-emerald-400" : "text-amber-400"}`}>{redistLabel}</span></p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-semibold text-sky-300 tabular-nums">
+                    {depthCm.toFixed(1)} cm
+                  </p>
+                  <p className="text-xs text-slate-400 font-light mt-0.5">
+                    Predicted accumulation from sim period
+                  </p>
+                </>
+              )
             ) : (
               <p className="text-sm text-slate-400 font-light">
                 {hasWeather ? weatherEmoji(temp!, precip!, windSpeed!, cloudCover ?? 50) + " " : ""}Current weather
@@ -305,14 +329,26 @@ export default function SnowDepthTooltip({
       <div className="flex items-start gap-3">
         <div className="flex-1">
           {hasDepth ? (
-            <>
-              <p className="text-xl font-semibold text-sky-300 tabular-nums">
-                {depthCm.toFixed(1)} cm
-              </p>
-              <p className="text-xs text-slate-400 font-light mt-0.5">
-                Predicted accumulation from sim period
-              </p>
-            </>
+            hasSnowDepthBreakdown ? (
+              <>
+                <p className="text-xl font-semibold text-sky-300 tabular-nums">
+                  ~{Math.round(refinedDepth!)} cm
+                </p>
+                <div className="text-[11px] text-slate-400 font-light mt-1 space-y-0.5">
+                  <p><span className="text-slate-500">├</span> Base snowpack (SeNorge): <span className="text-slate-300 tabular-nums">{senorgeDepthCm} cm</span></p>
+                  <p><span className="text-slate-500">└</span> Wind redistribution: <span className={`tabular-nums ${redistributionCm! >= 0 ? "text-emerald-400" : "text-amber-400"}`}>{redistLabel}</span></p>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xl font-semibold text-sky-300 tabular-nums">
+                  {depthCm.toFixed(1)} cm
+                </p>
+                <p className="text-xs text-slate-400 font-light mt-0.5">
+                  Predicted accumulation from sim period
+                </p>
+              </>
+            )
           ) : (
             <p className="text-xs text-slate-400 font-light">
               {hasWeather ? weatherEmoji(temp!, precip!, windSpeed!, cloudCover ?? 50) + " " : ""}Current weather
