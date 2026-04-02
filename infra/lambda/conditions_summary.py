@@ -2,8 +2,8 @@ import json
 import os
 import urllib.request
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-haiku-4-5-20251001"
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+MODEL = "gpt-4.1-nano"
 MAX_TOKENS = 800
 
 SYSTEM_PROMPT = """You are an alpine snow quality analyst helping backcountry skiers find the best powder. Be extremely concise — each field must be 1 short sentence max (under 20 words), except bestBet and snowQuality which can be 2-3 sentences.
@@ -159,7 +159,7 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": "Missing 'point' in request body"}),
             }
 
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
             return {
                 "statusCode": 500,
@@ -169,47 +169,57 @@ def lambda_handler(event, context):
 
         user_message = build_user_message(body)
 
+        json_schema = {
+            "name": "conditions_summary",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "dataNotice": {"type": "string"},
+                    "snowQuality": {"type": "string"},
+                    "windTransport": {"type": "string"},
+                    "surfaceConditions": {"type": "string"},
+                    "stabilityConcerns": {"type": "string"},
+                    "observedSnowDepth": {"type": "string"},
+                    "bestBet": {"type": "string"},
+                },
+                "required": [
+                    "dataNotice", "snowQuality", "windTransport",
+                    "surfaceConditions", "stabilityConcerns",
+                    "observedSnowDepth", "bestBet",
+                ],
+                "additionalProperties": False,
+            },
+        }
+
         payload = json.dumps({
             "model": MODEL,
             "max_tokens": MAX_TOKENS,
-            "system": SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": user_message}],
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            },
         }).encode("utf-8")
 
         req = urllib.request.Request(
-            ANTHROPIC_API_URL,
+            OPENAI_API_URL,
             data=payload,
             headers={
                 "Content-Type": "application/json",
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
+                "Authorization": f"Bearer {api_key}",
             },
         )
 
         with urllib.request.urlopen(req, timeout=25) as resp:
             result = json.loads(resp.read().decode("utf-8"))
 
-        # Extract text from Claude response
-        text = result["content"][0]["text"]
-
-        # Strip markdown code fences if present
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3].strip()
-
-        # Try to parse as JSON; fall back to wrapping raw text
-        try:
-            summary = json.loads(cleaned)
-        except json.JSONDecodeError:
-            summary = {
-                "dataNotice": "",
-                "windTransport": text[:200],
-                "surfaceConditions": "",
-                "stabilityConcerns": "",
-                "bestBet": "",
-            }
+        # Extract text from OpenAI response
+        text = result["choices"][0]["message"]["content"]
+        summary = json.loads(text)
 
         return {
             "statusCode": 200,
