@@ -4,17 +4,18 @@ import urllib.request
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 600
+MAX_TOKENS = 800
 
-SYSTEM_PROMPT = """You are an alpine conditions analyst. Be extremely concise — each field must be 1 short sentence max (under 20 words), except bestBet which can be 2-3 sentences.
+SYSTEM_PROMPT = """You are an alpine snow quality analyst helping backcountry skiers find the best powder. Be extremely concise — each field must be 1 short sentence max (under 20 words), except bestBet and snowQuality which can be 2-3 sentences.
 
-Return a JSON object with exactly these 6 keys:
-- "dataNotice": If no relevant field observations (relevance > 0.3) exist, say "No nearby field observations." Otherwise leave empty string.
+Return a JSON object with exactly these 7 keys:
+- "dataNotice": If no relevant field observations (relevance > 0.3) exist, say "Limited field observations nearby." Otherwise empty string.
+- "snowQuality": 2-3 sentences synthesizing the overall snow quality picture. Consider: base depth from SeNorge, fresh snow from simulation period, wind redistribution (deposited vs scoured), temperature history (cold = preserved powder vs warm = crust/melt), and any field observations of surface type. This is the key insight — what kind of snow is actually out there right now?
 - "windTransport": 1 short sentence on drift at this aspect/elevation.
 - "surfaceConditions": 1 short sentence on likely snow surface.
 - "stabilityConcerns": 1 short sentence on stability issues or "No data."
 - "observedSnowDepth": If any observation includes a snow depth measurement, report it as "X cm (observed Y km away, Zh ago)". Otherwise empty string.
-- "bestBet": 2-3 sentences recommending the best aspect, elevation range, and terrain type for a ski tour to find the best snow right now. Consider wind transport (lee vs windward), recent precipitation, temperature, surface conditions from observations, and avalanche risk. Be specific and actionable (e.g. "Head for NE-facing slopes between 800-1000m...").
+- "bestBet": 2-3 sentences recommending where to find the best snow right now. Synthesize everything: base depth, fresh accumulation, wind redistribution patterns (lee slopes get deposited cold snow, ridges get scoured), temperature (cold = powder preserved, warm = degraded), field observations, and avalanche risk. Be specific about aspect, elevation, and terrain type (e.g. "NE-facing lee bowls at 900-1100m likely hold 20cm of wind-deposited cold snow on a 120cm base...").
 
 Prioritize high-relevance, high-competency observations. Be direct, no hedging.
 
@@ -50,6 +51,24 @@ def build_user_message(body):
             wx_parts.append(f"from {round(weather['windDir'])}°")
         if wx_parts:
             parts.append(f"\nCurrent weather at point: {', '.join(wx_parts)}")
+
+    # Snow depth context from SeNorge + Pow Predictor simulation
+    snow_ctx = body.get("snowContext")
+    if snow_ctx:
+        base = snow_ctx.get("senorgeBaseCm", 0)
+        sim = snow_ctx.get("simDepthCm", 0)
+        redist = snow_ctx.get("redistributionCm", 0)
+        total = base + sim
+        redist_label = f"+{redist} cm deposited" if redist >= 0 else f"{redist} cm scoured"
+        parts.append(
+            f"\nSnow depth model data:"
+            f"\n  Base snowpack (SeNorge, before last 7 days): {base} cm"
+            f"\n  Simulation period accumulation (7d): {sim} cm at this cell"
+            f"\n  Wind redistribution at this cell: {redist_label}"
+            f"\n  Estimated total depth: ~{total} cm"
+            f"\n  (Positive redistribution = wind-deposited snow, likely cold/dry. "
+            f"Negative = wind-scoured, less snow than average.)"
+        )
 
     if forecast:
         parts.append(

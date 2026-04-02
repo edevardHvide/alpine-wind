@@ -101,8 +101,10 @@ export default function SnowDepthTooltip({
   const showAnalyzeButton = onAnalyze && !summary && !analysisLoading && !analysisError;
 
   // SeNorge snow depth breakdown
+  // senorgeDepthCm = base from sim start date (7d ago), depthCm = sim output at this cell
+  // refinedDepth = base + sim output (no double counting)
   const hasSnowDepthBreakdown = hasDepth && senorgeDepthCm !== undefined && senorgeDepthCm > 0 && redistributionCm !== undefined;
-  const refinedDepth = hasSnowDepthBreakdown ? Math.max(0, senorgeDepthCm + redistributionCm) : null;
+  const refinedDepth = hasSnowDepthBreakdown ? Math.max(0, senorgeDepthCm + depthCm) : null;
   const redistLabel = hasSnowDepthBreakdown
     ? redistributionCm >= 0 ? `+${redistributionCm.toFixed(0)} cm deposited` : `${redistributionCm.toFixed(0)} cm scoured`
     : null;
@@ -138,6 +140,7 @@ export default function SnowDepthTooltip({
                   </p>
                   <div className="text-xs text-slate-400 font-light mt-1 space-y-0.5">
                     <p><span className="text-slate-500">├</span> Base (SeNorge{senorgeAltitude ? `, ${Math.round(senorgeAltitude)}m` : ""}): <span className="text-slate-300 tabular-nums">{senorgeDepthCm} cm</span></p>
+                    <p><span className="text-slate-500">├</span> Sim period: <span className="text-slate-300 tabular-nums">{Math.round(depthCm)} cm</span></p>
                     <p><span className="text-slate-500">└</span> Wind redistribution: <span className={`tabular-nums ${redistributionCm! >= 0 ? "text-emerald-400" : "text-amber-400"}`}>{redistLabel}</span></p>
                   </div>
                 </>
@@ -267,6 +270,9 @@ export default function SnowDepthTooltip({
                   {summary.dataNotice && (
                     <p className="text-amber-400 font-medium">{summary.dataNotice}</p>
                   )}
+                  {summary.snowQuality && (
+                    <p className="text-slate-300 leading-relaxed"><span className="text-cyan-400 font-medium">Snow quality</span> {summary.snowQuality}</p>
+                  )}
                   <p className="text-slate-300"><span className="text-sky-400">Wind</span> {summary.windTransport}</p>
                   <p className="text-slate-300"><span className="text-sky-400">Surface</span> {summary.surfaceConditions}</p>
                   <p className="text-slate-300"><span className="text-sky-400">Stability</span> {summary.stabilityConcerns}</p>
@@ -337,7 +343,8 @@ export default function SnowDepthTooltip({
                   ~{Math.round(refinedDepth!)} cm
                 </p>
                 <div className="text-[11px] text-slate-400 font-light mt-1 space-y-0.5">
-                  <p><span className="text-slate-500">├</span> Base snowpack (SeNorge): <span className="text-slate-300 tabular-nums">{senorgeDepthCm} cm</span></p>
+                  <p><span className="text-slate-500">├</span> Base (SeNorge{senorgeAltitude ? `, ${Math.round(senorgeAltitude)}m` : ""}): <span className="text-slate-300 tabular-nums">{senorgeDepthCm} cm</span></p>
+                  <p><span className="text-slate-500">├</span> Sim period: <span className="text-slate-300 tabular-nums">{Math.round(depthCm)} cm</span></p>
                   <p><span className="text-slate-500">└</span> Wind redistribution: <span className={`tabular-nums ${redistributionCm! >= 0 ? "text-emerald-400" : "text-amber-400"}`}>{redistLabel}</span></p>
                 </div>
               </>
@@ -470,6 +477,9 @@ export default function SnowDepthTooltip({
               <div className="space-y-1.5 text-[11px] mt-1.5">
                 {summary.dataNotice && (
                   <p className="text-amber-400 font-medium">{summary.dataNotice}</p>
+                )}
+                {summary.snowQuality && (
+                  <p className="text-slate-300 leading-relaxed"><span className="text-cyan-400 font-medium">Snow quality</span> {summary.snowQuality}</p>
                 )}
                 <p className="text-slate-300"><span className="text-sky-400">Wind</span> {summary.windTransport}</p>
                 <p className="text-slate-300"><span className="text-sky-400">Surface</span> {summary.surfaceConditions}</p>

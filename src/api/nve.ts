@@ -164,17 +164,18 @@ export async function fetchWeatherTimeSeries(
 
 /**
  * Fetch SeNorge snow depth at a single point.
- * Returns depth in cm (API returns mm). Uses today's date.
+ * Returns depth in cm. Defaults to today if no date given.
+ * Pass a date string (YYYY-MM-DD) to get historical depth (e.g. sim start date).
  * Returns 0 if no data available (ocean, summer, etc.)
  */
 export async function fetchSnowDepth(
-  lat: number, lng: number,
+  lat: number, lng: number, date?: string,
 ): Promise<{ depthCm: number; altitude: number }> {
   const { x, y } = await findValidUtm(lat, lng);
-  const today = new Date().toISOString().slice(0, 10);
+  const d = date ?? new Date().toISOString().slice(0, 10);
 
   try {
-    const sd = await fetchTheme(x, y, today, today, "sd");
+    const sd = await fetchTheme(x, y, d, d, "sd");
     const depthCm = sd.data[0] ?? 0; // sd theme returns cm directly
     return {
       depthCm: Math.round(depthCm),

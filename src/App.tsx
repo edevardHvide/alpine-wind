@@ -306,10 +306,12 @@ export default function App() {
     }).catch((err) => {
       sendErrorReport(err instanceof Error ? err : new Error(String(err)), "weather-fetch");
     });
-    // Fetch SeNorge snow depth at center point (lightweight, single API call)
-    fetchSnowDepth(lat, lng).then((sd) => {
+    // Fetch SeNorge snow depth at sim start date (7 days ago) to avoid
+    // double-counting — the sim models the same period's snowfall
+    const simStartDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    fetchSnowDepth(lat, lng, simStartDate).then((sd) => {
       senorgeDepthRef.current = sd;
-      console.log(`SeNorge snow depth: ${sd.depthCm} cm at ${Math.round(sd.altitude)}m`);
+      console.log(`SeNorge snow depth (${simStartDate}): ${sd.depthCm} cm at ${Math.round(sd.altitude)}m`);
     }).catch(() => {
       senorgeDepthRef.current = null;
     });
@@ -543,6 +545,7 @@ export default function App() {
     }
 
     // Compute wind redistribution delta: cell depth vs grid average
+    // SeNorge base is from sim start date (7d ago) — no double counting
     const senorge = senorgeDepthRef.current;
     let senorgeDepthCm: number | undefined;
     let senorgeAltitude: number | undefined;
@@ -554,7 +557,6 @@ export default function App() {
       const gradient = 3; // cm per 100m
       const taperStart = 1300;
       let correction = dElev > 0 ? (dElev / 100) * gradient : (dElev / 100) * gradient * 0.5;
-      // Taper correction above taperStart (wind scour dominates at high alpine)
       if (elevation > taperStart) {
         const taperFactor = Math.max(0, 1 - (elevation - taperStart) / 500);
         correction *= taperFactor;
@@ -642,6 +644,12 @@ export default function App() {
             precip: depthProbe.precip,
             windSpeed: depthProbe.windSpeed,
             windDir: depthProbe.windDir,
+          } : undefined,
+          snowContext: depthProbe.senorgeDepthCm !== undefined ? {
+            senorgeBaseCm: depthProbe.senorgeDepthCm,
+            simDepthCm: Math.round(depthProbe.depthCm),
+            redistributionCm: depthProbe.redistributionCm ?? 0,
+            pointElevation: depthProbe.elevation ?? 0,
           } : undefined,
         }),
         signal: controller.signal,
