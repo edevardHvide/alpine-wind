@@ -548,8 +548,18 @@ export default function App() {
     let senorgeAltitude: number | undefined;
     let redistributionCm: number | undefined;
     if (senorge && senorge.depthCm > 0) {
-      senorgeDepthCm = senorge.depthCm;
       senorgeAltitude = senorge.altitude;
+      // Elevation correction: +3 cm per 100m above cell altitude, taper above 1300m
+      const dElev = elevation - senorge.altitude;
+      const gradient = 3; // cm per 100m
+      const taperStart = 1300;
+      let correction = dElev > 0 ? (dElev / 100) * gradient : (dElev / 100) * gradient * 0.5;
+      // Taper correction above taperStart (wind scour dominates at high alpine)
+      if (elevation > taperStart) {
+        const taperFactor = Math.max(0, 1 - (elevation - taperStart) / 500);
+        correction *= taperFactor;
+      }
+      senorgeDepthCm = Math.max(0, Math.round(senorge.depthCm + correction));
       const depthArr = step.snowGrid.depth;
       let sum = 0;
       let count = 0;
