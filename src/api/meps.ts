@@ -1,5 +1,6 @@
 // MEPS 2.5km wind data from MET Norway THREDDS via Lambda proxy.
 // Provides 10m surface wind, 850hPa pressure-level wind, and gusts.
+// Supports historical (archive) + forecast (latest) in a single request.
 
 const API_BASE = "/api/meps-wind";
 
@@ -15,32 +16,46 @@ export interface MepsWindStation {
 }
 
 export interface MepsWindResponse {
-  source: string;
+  sources: string[];
   model: string;
   stations: MepsWindStation[];
 }
 
 /**
- * Fetch MEPS wind for a grid of sample points.
- * Points are passed as semicolon-separated lat,lng pairs.
- * hours: number of hourly forecast steps to fetch (max 62).
+ * Fetch MEPS wind for a grid of sample points (history + forecast).
+ * Each point is fetched with mode=full: 7 days archive + 24h forecast.
+ *
+ * For 9 sample points, this makes 9 sequential Lambda calls (each ~7s).
+ * To keep latency manageable, we batch points into the Lambda's multi-point
+ * mode — but for historical mode each point makes ~14 THREDDS fetches,
+ * so we split into smaller batches to stay under Lambda timeout.
  */
 export async function fetchMepsWindGrid(
   samplePoints: { lat: number; lng: number }[],
-  hours = 24,
+  daysBack = 7,
+  hoursForward = 24,
 ): Promise<MepsWindResponse> {
-  const pointsParam = samplePoints
-    .map((p) => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`)
-    .join(";");
+  // Fetch each point individually in parallel from the frontend
+  // (Lambda does concurrent archive fetches internally per point,
+  //  but multi-point x historical would exceed Lambda timeout)
+  const results = await Promise.all(
+    samplePoints.map(async (p) => {
+      const url = `${API_BASE}?lat=${p.lat.toFixed(4)}&lng=${p.lng.toFixed(4)}&mode=full&daysBack=${daysBack}&hours=${hoursForward}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.warn(`MEPS wind fetch failed for (${p.lat}, ${p.lng}):`, res.status);
+        return null;
+      }
+      const json: MepsWindResponse = await res.json();
+      return json.stations[0] ?? null;
+    }),
+  );
 
-  const url = `${API_BASE}?points=${encodeURIComponent(pointsParam)}&hours=${hours}`;
+  const stations = results.filter((s): s is MepsWindStation => s !== null);
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    const err = await res.text();
-    console.warn("MEPS wind fetch failed:", res.status, err);
-    throw new Error(`MEPS wind API error: ${res.status}`);
-  }
-
-  return res.json();
+  return {
+    sources: ["meps_archive", "meps_latest"],
+    model: "MEPS 2.5km",
+    stations,
+  };
 }

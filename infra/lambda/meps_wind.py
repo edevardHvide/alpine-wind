@@ -2,7 +2,8 @@ import json
 import math
 import urllib.request
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # MEPS Lambert Conformal Conic projection parameters
@@ -16,7 +17,8 @@ GRID_DX = 2500.0       # grid spacing meters
 GRID_NX = 949
 GRID_NY = 1069
 
-THREDDS_BASE = "https://thredds.met.no/thredds/dodsC/mepslatest"
+THREDDS_LATEST = "https://thredds.met.no/thredds/dodsC/mepslatest"
+THREDDS_ARCHIVE = "https://thredds.met.no/thredds/dodsC/meps25epsarchive"
 
 
 def latlon_to_lambert(lat, lon):
@@ -50,20 +52,11 @@ def latlon_to_grid(lat, lon):
 def find_latest_file():
     """Find the latest MEPS subset file on THREDDS."""
     now = datetime.now(timezone.utc)
-    # Try recent runs: current hour rounded down to nearest 3h, then go back
     for hours_back in range(0, 24, 3):
-        h = now.hour - hours_back
-        if h < 0:
-            # Previous day
-            dt = datetime(now.year, now.month, now.day - 1,
-                          (24 + h) // 3 * 3, 0, 0, tzinfo=timezone.utc)
-        else:
-            dt = datetime(now.year, now.month, now.day,
-                          h // 3 * 3, 0, 0, tzinfo=timezone.utc)
-        if dt > now:
-            continue
+        dt = now - timedelta(hours=hours_back)
+        dt = dt.replace(hour=(dt.hour // 3) * 3, minute=0, second=0, microsecond=0)
         fname = f"meps_lagged_6_h_subset_2_5km_{dt.strftime('%Y%m%dT%H')}Z.ncml"
-        url = f"{THREDDS_BASE}/{fname}.dds"
+        url = f"{THREDDS_LATEST}/{fname}.dds"
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "PowPredictor/1.0"})
             urllib.request.urlopen(req, timeout=5)
@@ -73,9 +66,9 @@ def find_latest_file():
     return None
 
 
-def fetch_opendap(fname, query):
+def fetch_opendap(base_url, fname, query):
     """Fetch ASCII data from OPeNDAP."""
-    url = f"{THREDDS_BASE}/{fname}.ascii?{query}"
+    url = f"{base_url}/{fname}.ascii?{query}"
     req = urllib.request.Request(url, headers={"User-Agent": "PowPredictor/1.0"})
     with urllib.request.urlopen(req, timeout=25) as resp:
         return resp.read().decode("utf-8")
@@ -92,7 +85,6 @@ def parse_1d_values(text, varname):
             if capture:
                 break
             continue
-        # Start capturing after the dimension line like "varname.varname[N]"
         if f"{varname}.{varname}[" in stripped or (f"{varname}[" in stripped and "ARRAY" not in stripped and "Grid" not in stripped and "Float" not in stripped and "Int" not in stripped):
             capture = True
             continue
@@ -101,7 +93,6 @@ def parse_1d_values(text, varname):
                 part = part.strip()
                 if not part:
                     continue
-                # Remove [idx] prefix if present
                 m = re.match(r"(?:\[\d+\])+,?\s*(.+)", part)
                 if m:
                     part = m.group(1).strip()
@@ -112,11 +103,27 @@ def parse_1d_values(text, varname):
     return values
 
 
-def fetch_wind_at_point(fname, lat, lng, num_times=8):
-    """Fetch wind data for a single grid point."""
-    xi, yi = latlon_to_grid(lat, lng)
+def xy_to_speed_dir(x_vals, y_vals):
+    """Convert x,y wind component arrays to speed,direction arrays."""
+    speeds = []
+    dirs = []
+    for i in range(min(len(x_vals), len(y_vals))):
+        spd = math.sqrt(x_vals[i] ** 2 + y_vals[i] ** 2)
+        d = (270 - math.degrees(math.atan2(y_vals[i], x_vals[i]))) % 360
+        speeds.append(round(spd, 2))
+        dirs.append(round(d, 1))
+    return speeds, dirs
 
-    t_end = min(num_times - 1, 61)  # max 62 timesteps in MEPS
+
+def fetch_wind_latest(lat, lng, num_times=8):
+    """Fetch forecast wind from mepslatest (has ensemble dimension)."""
+    xi, yi = latlon_to_grid(lat, lng)
+    fname = find_latest_file()
+    if not fname:
+        return None
+
+    t_end = min(num_times - 1, 61)
+    # Latest subset: dims [time][height2][ensemble_member][y][x], pressure[3]=850hPa
     q = (
         f"x_wind_10m[0:{t_end}][0][0][{yi}][{xi}],"
         f"y_wind_10m[0:{t_end}][0][0][{yi}][{xi}],"
@@ -128,48 +135,177 @@ def fetch_wind_at_point(fname, lat, lng, num_times=8):
         f"time[0:{t_end}]"
     )
 
-    data = fetch_opendap(fname, q)
+    data = fetch_opendap(THREDDS_LATEST, fname, q)
 
-    x10_vals = parse_1d_values(data, "x_wind_10m")
-    y10_vals = parse_1d_values(data, "y_wind_10m")
-    gust_vals = parse_1d_values(data, "wind_speed_of_gust")
-    x850_vals = parse_1d_values(data, "x_wind_pl")
-    y850_vals = parse_1d_values(data, "y_wind_pl")
+    s10, d10 = xy_to_speed_dir(parse_1d_values(data, "x_wind_10m"),
+                                parse_1d_values(data, "y_wind_10m"))
+    s850, d850 = xy_to_speed_dir(parse_1d_values(data, "x_wind_pl"),
+                                  parse_1d_values(data, "y_wind_pl"))
+    gust = [round(v, 2) for v in parse_1d_values(data, "wind_speed_of_gust")]
     lat_val = parse_1d_values(data, "latitude")
     lon_val = parse_1d_values(data, "longitude")
-    time_vals = parse_1d_values(data, "time")
+    ts = [int(v * 1000) for v in parse_1d_values(data, "time")]
 
-    n = min(len(x10_vals), len(y10_vals), len(gust_vals),
-            len(x850_vals), len(y850_vals))
+    return {
+        "lat": lat_val[0] if lat_val else lat,
+        "lng": lon_val[0] if lon_val else lng,
+        "source": fname,
+        "timestamps": ts,
+        "windSpeed10m": s10,
+        "windDir10m": d10,
+        "windSpeed850hPa": s850,
+        "windDir850hPa": d850,
+        "windGust": gust,
+    }
 
+
+def fetch_archive_chunk(dt, xi, yi, num_steps=8):
+    """Fetch num_steps hourly timesteps from one archive run.
+
+    Archive files: meps_det_2_5km_YYYYMMDDTHHZ.nc
+    Dims: [time][height7][y][x] for 10m, [time][pressure][y][x] for pl
+    No ensemble dimension. pressure[10]=850hPa. 67 timesteps per run.
+    """
+    fname = f"{dt.strftime('%Y/%m/%d')}/meps_det_2_5km_{dt.strftime('%Y%m%dT%H')}Z.nc"
+    t_end = min(num_steps - 1, 66)
+    q = (
+        f"x_wind_10m[0:{t_end}][0][{yi}][{xi}],"
+        f"y_wind_10m[0:{t_end}][0][{yi}][{xi}],"
+        f"wind_speed_of_gust[0:{t_end}][0][{yi}][{xi}],"
+        f"x_wind_pl[0:{t_end}][10][{yi}][{xi}],"
+        f"y_wind_pl[0:{t_end}][10][{yi}][{xi}],"
+        f"time[0:{t_end}]"
+    )
+
+    try:
+        data = fetch_opendap(THREDDS_ARCHIVE, fname, q)
+    except Exception:
+        return None
+
+    s10, d10 = xy_to_speed_dir(parse_1d_values(data, "x_wind_10m"),
+                                parse_1d_values(data, "y_wind_10m"))
+    s850, d850 = xy_to_speed_dir(parse_1d_values(data, "x_wind_pl"),
+                                  parse_1d_values(data, "y_wind_pl"))
+    gust = [round(v, 2) for v in parse_1d_values(data, "wind_speed_of_gust")]
+    ts = [int(v * 1000) for v in parse_1d_values(data, "time")]
+
+    if not s10 or not s850:
+        return None
+
+    return {
+        "timestamps": ts,
+        "windSpeed10m": s10,
+        "windDir10m": d10,
+        "windSpeed850hPa": s850,
+        "windDir850hPa": d850,
+        "windGust": gust,
+    }
+
+
+def fetch_wind_historical(lat, lng, days_back=7):
+    """Fetch historical wind by taking 24h chunks from archive runs every 24h.
+
+    Strategy: pick one run per day (12Z), fetch first 24 timesteps (24h hourly).
+    For 7 days = 7 fetches instead of 56. Then sample at 3h intervals for output.
+    """
+    xi, yi = latlon_to_grid(lat, lng)
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days_back)
+
+    # Fetch lat/lon from a recent archive run
+    lat_val, lon_val = lat, lng
+    for d in range(0, 3):
+        check_dt = now - timedelta(days=d)
+        fname = f"{check_dt.strftime('%Y/%m/%d')}/meps_det_2_5km_{check_dt.strftime('%Y%m%d')}T12Z.nc"
+        try:
+            data = fetch_opendap(THREDDS_ARCHIVE, fname,
+                                 f"latitude[{yi}][{xi}],longitude[{yi}][{xi}]")
+            lv = parse_1d_values(data, "latitude")
+            lnv = parse_1d_values(data, "longitude")
+            if lv:
+                lat_val = lv[0]
+            if lnv:
+                lon_val = lnv[0]
+            break
+        except Exception:
+            continue
+
+    # Build list of archive runs to fetch: 2 per day (00Z, 12Z), 12 timesteps each
+    run_dts = []
+    dt = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    while dt < now:
+        for run_hour in (0, 12):
+            run_dt = dt.replace(hour=run_hour)
+            if run_dt < start - timedelta(hours=1) or run_dt > now:
+                continue
+            run_dts.append(run_dt)
+        dt += timedelta(days=1)
+
+    # Fetch all chunks concurrently
+    all_ts = []
+    all_s10 = []
+    all_d10 = []
+    all_s850 = []
+    all_d850 = []
+    all_gust = []
+
+    with ThreadPoolExecutor(max_workers=7) as pool:
+        futures = {
+            pool.submit(fetch_archive_chunk, run_dt, xi, yi, 12): run_dt
+            for run_dt in run_dts
+        }
+        for future in as_completed(futures):
+            chunk = future.result()
+            if chunk:
+                all_ts.extend(chunk["timestamps"])
+                all_s10.extend(chunk["windSpeed10m"])
+                all_d10.extend(chunk["windDir10m"])
+                all_s850.extend(chunk["windSpeed850hPa"])
+                all_d850.extend(chunk["windDir850hPa"])
+                all_gust.extend(chunk["windGust"])
+
+    # Deduplicate by timestamp (overlapping runs), keep latest value
+    seen = {}
+    for i, ts in enumerate(all_ts):
+        seen[ts] = i
+    indices = sorted(seen.values(), key=lambda i: all_ts[i])
+
+    # Sample at 3h intervals to match NVE resolution
+    THREE_H_MS = 3 * 3600 * 1000
+    timestamps = []
     wind_speed_10m = []
     wind_dir_10m = []
     wind_speed_850 = []
     wind_dir_850 = []
     wind_gust = []
-    timestamps = []
 
-    for i in range(n):
-        spd10 = math.sqrt(x10_vals[i] ** 2 + y10_vals[i] ** 2)
-        dir10 = (270 - math.degrees(math.atan2(y10_vals[i], x10_vals[i]))) % 360
-        wind_speed_10m.append(round(spd10, 2))
-        wind_dir_10m.append(round(dir10, 1))
-
-        spd850 = math.sqrt(x850_vals[i] ** 2 + y850_vals[i] ** 2)
-        dir850 = (270 - math.degrees(math.atan2(y850_vals[i], x850_vals[i]))) % 360
-        wind_speed_850.append(round(spd850, 2))
-        wind_dir_850.append(round(dir850, 1))
-
-        wind_gust.append(round(gust_vals[i], 2))
-
-        if i < len(time_vals):
-            timestamps.append(int(time_vals[i] * 1000))  # epoch ms
+    if indices:
+        sorted_ts = [all_ts[i] for i in indices]
+        # Generate 3h grid from start to end
+        grid_start = (sorted_ts[0] // THREE_H_MS) * THREE_H_MS
+        grid_end = sorted_ts[-1]
+        t = grid_start
+        while t <= grid_end:
+            # Find closest data point
+            best_idx = None
+            best_dist = float("inf")
+            for j, idx in enumerate(indices):
+                dist = abs(all_ts[idx] - t)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_idx = idx
+            if best_idx is not None and best_dist < 2 * 3600 * 1000:  # within 2h
+                timestamps.append(t)
+                wind_speed_10m.append(all_s10[best_idx])
+                wind_dir_10m.append(all_d10[best_idx])
+                wind_speed_850.append(all_s850[best_idx])
+                wind_dir_850.append(all_d850[best_idx])
+                wind_gust.append(all_gust[best_idx])
+            t += THREE_H_MS
 
     return {
-        "lat": lat_val[0] if lat_val else lat,
-        "lng": lon_val[0] if lon_val else lng,
-        "gridX": xi,
-        "gridY": yi,
+        "lat": lat_val,
+        "lng": lon_val,
         "timestamps": timestamps,
         "windSpeed10m": wind_speed_10m,
         "windDir10m": wind_dir_10m,
@@ -183,6 +319,8 @@ def lambda_handler(event, context):
     qs = event.get("queryStringParameters") or {}
 
     try:
+        mode = qs.get("mode", "full")  # "forecast" | "historical" | "full"
+        days_back = int(qs.get("daysBack", "7"))
         num_times = int(qs.get("hours", "24"))
 
         if "points" in qs:
@@ -200,18 +338,41 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": "Provide lat+lng or points parameter"}),
             }
 
-        fname = find_latest_file()
-        if not fname:
-            return {
-                "statusCode": 502,
-                "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
-                "body": json.dumps({"error": "No MEPS data available on THREDDS"}),
-            }
-
-        # Fetch each point individually to avoid massive OPeNDAP queries
         results = []
+        sources = set()
+
         for lat, lng in points:
-            results.append(fetch_wind_at_point(fname, lat, lng, num_times))
+            if mode == "forecast":
+                r = fetch_wind_latest(lat, lng, num_times)
+                if r:
+                    sources.add(r.pop("source"))
+                    results.append(r)
+
+            elif mode == "historical":
+                r = fetch_wind_historical(lat, lng, days_back)
+                results.append(r)
+                sources.add("meps_archive")
+
+            elif mode == "full":
+                # Historical + forecast merged into one timeline
+                hist = fetch_wind_historical(lat, lng, days_back)
+                fcast = fetch_wind_latest(lat, lng, num_times)
+
+                if fcast:
+                    sources.add(fcast.pop("source"))
+                    # Append forecast timestamps after history ends
+                    hist_end_ms = hist["timestamps"][-1] if hist["timestamps"] else 0
+                    for i, ts in enumerate(fcast["timestamps"]):
+                        if ts > hist_end_ms:
+                            hist["timestamps"].append(ts)
+                            hist["windSpeed10m"].append(fcast["windSpeed10m"][i])
+                            hist["windDir10m"].append(fcast["windDir10m"][i])
+                            hist["windSpeed850hPa"].append(fcast["windSpeed850hPa"][i])
+                            hist["windDir850hPa"].append(fcast["windDir850hPa"][i])
+                            hist["windGust"].append(fcast["windGust"][i])
+
+                sources.add("meps_archive")
+                results.append(hist)
 
         return {
             "statusCode": 200,
@@ -221,7 +382,7 @@ def lambda_handler(event, context):
                 "Cache-Control": "public, max-age=3600",
             },
             "body": json.dumps({
-                "source": fname,
+                "sources": list(sources),
                 "model": "MEPS 2.5km",
                 "stations": results,
             }),

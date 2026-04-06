@@ -340,8 +340,8 @@ export async function fetchSpatialWeather(
     onProgress?.(stage, 40 + pct * 0.4);
   });
 
-  // MEPS wind: fetch 10m + 850hPa + gusts for all sample points
-  const mepsPromise = fetchMepsWindGrid(samplePoints, 24).catch((err) => {
+  // MEPS wind: fetch history + forecast (10m + 850hPa + gusts) for all sample points
+  const mepsPromise = fetchMepsWindGrid(samplePoints, daysBack, 24).catch((err) => {
     console.warn("MEPS wind fetch failed, will use NVE/MET wind:", err);
     return null;
   });
@@ -485,7 +485,7 @@ export async function fetchSpatialWeather(
   // ── Phase 4: Replace wind data with MEPS if available ──
   if (mepsResult && mepsResult.stations.length > 0) {
     onProgress?.("Applying MEPS wind data...", 92);
-    console.log(`MEPS: ${mepsResult.stations.length} wind stations from ${mepsResult.source}`);
+    console.log(`MEPS: ${mepsResult.stations.length} wind stations from ${mepsResult.sources.join(", ")}`);
 
     for (const station of mergedStations) {
       // Find closest MEPS station
