@@ -45,7 +45,7 @@ src/
                      regions, historical-sim, simulation.worker, worker-protocol
   rendering/         wind-layer-adapter, snow-overlay, color-scales
   hooks/             useCesium, useSimulation, useHistoricalSim, useAnimationLoop
-  api/               nve (weather), kartverket (place search)
+  api/               nve (weather), meps (THREDDS wind), kartverket (place search)
   utils/             geo, math, device
   types/             wind, terrain, snow
 ```
@@ -64,7 +64,8 @@ src/
 | `src/rendering/wind-layer-adapter.ts` | Custom Windy-style canvas particle overlay (6000 particles) |
 | `src/rendering/snow-overlay.ts` | Canvas texture overlay on terrain (manual + historical color modes) |
 | `src/rendering/color-scales.ts` | Snow depth color mapping — brown/white/blue (manual), blue gradient (historical) |
-| `src/api/nve.ts` | NVE GridTimeSeries API client with UTM33 conversion |
+| `src/api/nve.ts` | NVE GridTimeSeries API client with UTM33 conversion, MEPS wind integration |
+| `src/api/meps.ts` | MEPS 2.5km wind from THREDDS OPeNDAP via Lambda — 10m, 850hPa, gusts |
 | `src/hooks/useSimulation.ts` | Worker-based simulation hook — creates worker, sends/receives messages |
 | `src/hooks/useHistoricalSim.ts` | Historical sim hook — silent background mode, reveal(), worker communication |
 | `src/utils/device.ts` | Mobile detection (narrow screen AND touch) + adaptive constants |
@@ -126,6 +127,32 @@ Weather is fetched from a 3×3 grid of NVE stations (9 points) across the terrai
 ### IMPORTANT: Per-cell temperature check
 
 When passing per-cell snowfall arrays to `computeSnowAccumulation`, the global `params.temperature > 1` early return MUST be bypassed. The per-cell filtering already handles temperature (cells with temp > 0 get snowfall = 0). The global check would kill all snow when domain-average is above freezing, even if high-altitude cells are below freezing.
+
+## MEPS Wind Data (THREDDS OPeNDAP)
+
+NVE's seNorge wind data massively underestimates mountain wind (2.8 m/s vs 16 m/s reality). MEPS 2.5km model wind from MET Norway's THREDDS server replaces it.
+
+- **Lambda:** `pow-predictor-meps-wind` — converts lat/lng to Lambert Conformal Conic grid indices, fetches from THREDDS OPeNDAP
+- **Data:** 10m surface wind (`x_wind_10m`/`y_wind_10m`), 850hPa pressure-level wind (`x_wind_pl`/`y_wind_pl` at pressure[3] latest / pressure[10] archive), gusts (`wind_speed_of_gust`)
+- **Archive:** `thredds.met.no/thredds/dodsC/meps25epsarchive/YYYY/MM/DD/meps_det_2_5km_YYYYMMDDTHHZ.nc` — goes back to 2016, hourly, no ensemble dimension, `height7` for 10m
+- **Latest:** `thredds.met.no/thredds/dodsC/mepslatest/meps_lagged_6_h_subset_2_5km_YYYYMMDDTHHZ.ncml` — forecast, hourly, 30 ensembles, `height2` for 10m
+- **Historical resolution:** Hourly (183 timesteps over 7 days), fetched concurrently with ThreadPoolExecutor (7 workers → 5-7s)
+- **Altitude blending:** Below 500m = pure 10m wind, above 900m = pure 850hPa, linear blend between. 850hPa (~1500m) represents free-atmosphere wind that exposed ridges experience.
+- **Integration:** `applyMepsWind()` in `nve.ts` runs in ALL weather return paths (merged, NVE-only fallbacks)
+- **Cache:** localStorage key prefix `pow-weather-v2-` — bump version when changing data sources to bust stale cache
+
+### IMPORTANT: Archive vs Latest file format differences
+
+| | Latest (forecast) | Archive (historical) |
+|---|---|---|
+| 10m height dim | `height2` | `height7` |
+| 850hPa pressure index | `[3]` (of 6 levels) | `[10]` (of 13 levels) |
+| Ensemble dim | Present (30 members) | Absent |
+| OPeNDAP 10m query | `x_wind_10m[t][0][ens][y][x]` | `x_wind_10m[t][0][y][x]` |
+
+### IMPORTANT: NVE wind is useless for mountains
+
+NVE's `windSpeed10m3h` theme is smoothed NWP model output on a 1km grid. It erases all ridge speed-up effects. At Driftevasshøgde (958m), NVE reports 2.8 m/s while reality is 16 m/s. Always use MEPS 850hPa for mountain wind.
 
 ## Snow Overlay Rendering
 
@@ -271,8 +298,9 @@ All AWS resources are codified in `infra/` and managed with OpenTofu:
 - **Lambda:** `pow-predictor-nve-proxy` (Python 3.11, proxies NVE API, returns `Cache-Control: public, max-age=1800`)
 - **Lambda:** `pow-predictor-conditions-summary` (Python 3.11, calls Claude Haiku for RegObs analysis)
 - **Lambda:** `pow-predictor-frontend-errors` (Python 3.11, ingests frontend JS errors to CloudWatch)
+- **Lambda:** `pow-predictor-meps-wind` (Python 3.11, MEPS THREDDS OPeNDAP wind proxy)
 - **Lambda:** `pow-predictor-monitor` (Python 3.11, health check endpoint)
-- **API Gateway v2:** HTTP API (200 req/s, 500 burst) with `GET /api/nve/{proxy+}`, `POST /api/conditions-summary`, `POST /api/errors`, `GET /api/monitor` routes
+- **API Gateway v2:** HTTP API (200 req/s, 500 burst) with `GET /api/nve/{proxy+}`, `GET /api/meps-wind`, `POST /api/conditions-summary`, `POST /api/errors`, `GET /api/monitor` routes
 - **IAM:** Scoped deploy user `pow-predictor` (S3, CloudFront, Lambda, CloudWatch only)
 - **State:** `s3://pow-predictor-tfstate` (versioned)
 
