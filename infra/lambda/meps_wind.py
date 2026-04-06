@@ -203,10 +203,10 @@ def fetch_archive_chunk(dt, xi, yi, num_steps=8):
 
 
 def fetch_wind_historical(lat, lng, days_back=7):
-    """Fetch historical wind by taking 24h chunks from archive runs every 24h.
+    """Fetch historical wind at hourly resolution from archive runs.
 
-    Strategy: pick one run per day (12Z), fetch first 24 timesteps (24h hourly).
-    For 7 days = 7 fetches instead of 56. Then sample at 3h intervals for output.
+    Strategy: pick two runs per day (00Z, 12Z), fetch first 12 hourly timesteps
+    from each. For 7 days = 14 fetches (concurrent). Output is raw hourly data.
     """
     xi, yi = latlon_to_grid(lat, lng)
     now = datetime.now(timezone.utc)
@@ -270,38 +270,13 @@ def fetch_wind_historical(lat, lng, days_back=7):
         seen[ts] = i
     indices = sorted(seen.values(), key=lambda i: all_ts[i])
 
-    # Sample at 3h intervals to match NVE resolution
-    THREE_H_MS = 3 * 3600 * 1000
-    timestamps = []
-    wind_speed_10m = []
-    wind_dir_10m = []
-    wind_speed_850 = []
-    wind_dir_850 = []
-    wind_gust = []
-
-    if indices:
-        sorted_ts = [all_ts[i] for i in indices]
-        # Generate 3h grid from start to end
-        grid_start = (sorted_ts[0] // THREE_H_MS) * THREE_H_MS
-        grid_end = sorted_ts[-1]
-        t = grid_start
-        while t <= grid_end:
-            # Find closest data point
-            best_idx = None
-            best_dist = float("inf")
-            for j, idx in enumerate(indices):
-                dist = abs(all_ts[idx] - t)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_idx = idx
-            if best_idx is not None and best_dist < 2 * 3600 * 1000:  # within 2h
-                timestamps.append(t)
-                wind_speed_10m.append(all_s10[best_idx])
-                wind_dir_10m.append(all_d10[best_idx])
-                wind_speed_850.append(all_s850[best_idx])
-                wind_dir_850.append(all_d850[best_idx])
-                wind_gust.append(all_gust[best_idx])
-            t += THREE_H_MS
+    # Output raw hourly data (no resampling)
+    timestamps = [all_ts[i] for i in indices]
+    wind_speed_10m = [all_s10[i] for i in indices]
+    wind_dir_10m = [all_d10[i] for i in indices]
+    wind_speed_850 = [all_s850[i] for i in indices]
+    wind_dir_850 = [all_d850[i] for i in indices]
+    wind_gust = [all_gust[i] for i in indices]
 
     return {
         "lat": lat_val,
